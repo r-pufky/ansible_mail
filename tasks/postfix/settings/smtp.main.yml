@@ -1,0 +1,74 @@
+---
+###############################################################################
+# Postfix MTA SMTP Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manages smtp_ settings. Cross-reference milter.yml for milter configuration.
+#
+# Args:
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * https://workaround.org/ispmail
+# * https://datatracker.ietf.org/doc/html/rfc4954
+# * https://access.redhat.com/articles/1468593
+# * https://rudd-o.com/linux-and-free-software/setting-up-a-mail-server-using-postfix-in-5-minutes
+
+- name: 'postfix settings smtp | set path for TLS CA certificates (chroot environment)'
+  ansible.builtin.command: 'postconf smtp_tls_CApath=/etc/ssl/certs'
+  changed_when: false
+
+- name: 'postfix settings smtp | use opportunistic TLS (TLS when supported by the remote receiving server)'
+  ansible.builtin.command: 'postconf smtp_tls_security_level=may'
+  changed_when: false
+
+# smtpd tls log range 0 to 4. keep < 2 unless problems. 4 strongly discouraged.
+# 0: Disable logging of TLS activity (postfix default)
+# 1: Summary message on TLS handshake completion, no client certificate
+#    trust-chain errors if verification not required. (info)
+# 2: Log TLS negotiation. (debug)
+# 3: Log hexadecimal and ASCII dump of TLS negotiation process.
+# 4: Log hexadecimal and ASCII dump of complete transmission after STARTTLS.
+- name: 'postfix settings smtp | generate postfix smtpd tls logging map'
+  ansible.builtin.set_fact:
+    _mail_postfix_smtp_tls_log: '{{ {"0": 1, "1": 1, "2": 1, "3": 1, "4": 2, "5": 2} }}'
+
+- name: 'postfix settings smtp | log summary message on TLS handshake completion'
+  ansible.builtin.command: 'postconf smtp_tls_loglevel={{ _mail_postfix_smtp_tls_log[__log_int] }}'
+  changed_when: false
+
+- name: 'postfix settings smtp | set TLS session cache file'
+  ansible.builtin.command: 'postconf smtp_tls_session_cache_database=btree:${data_directory}/smtp_scache'
+  changed_when: false
+
+# TODO(postfix 3.6+): this becomes a minimal accepted level (e.g. >=TLSv1.2)
+- name: 'postfix settings smtp | require mandatory strong TLS protocols (disables SSLv2/3, TLSv1/1.1)'
+  ansible.builtin.command: 'postconf smtp_tls_mandatory_protocols=!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+  changed_when: false
+
+# TODO(postfix 3.6+): this becomes a minimal accepted level (e.g. >=TLSv1.2)
+- name: 'postfix settings smtp | accept only strong TLS protocols (disables SSLv2/3, TLSv1/1.1)'
+  ansible.builtin.command: 'postconf smtp_tls_protocols=!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+  changed_when: false
+
+- name: 'postfix settings smtp | re-write/strip headers for senders to protect privacy'
+  ansible.builtin.command: 'postconf smtp_header_checks=pcre:/etc/postfix/pcre/sender_header_checks'
+  changed_when: false

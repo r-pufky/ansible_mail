@@ -1,0 +1,58 @@
+---
+###############################################################################
+# OpenDMARC Ignore Hosts
+###############################################################################
+# OpenDMARC is an open source implementation of the Domain-based Message
+# Authentication, Reporting and Conformance (DMARC) specification.
+#
+# DMARC is a policy for mail transfer, which is already supported by some
+# common mail providers. It depends on Sender Policy Framework and DKIM. DMARC
+# provides a policy for outgoing mail and checks incoming mails for compliance
+# with that policy. The policy is published via a DNS TXT record. It is
+# explained in #DMARC Record. Validation is done in a daemon. For more info see
+# RFC7489.
+#
+# Args:
+#   mail_postfix_user: string postfix user.
+#   mail_opendmarc_user: string opendmarc user.
+#   mail_opendmarc_group: string opendmarc group.
+#   __trusted_networks: list of networks (hostnames, ip, cidr) localhost ok.
+#
+# Reference:
+# * https://wiki.archlinux.org/title/OpenDMARC
+# * https://en.wikipedia.org/wiki/DMARC
+# * http://www.trusteddomain.org/opendmarc/
+# * https://dmarcguide.globalcyberalliance.org/
+# * https://www.linuxbabe.com/mail-server/create-dmarc-record
+# * https://www.skelleton.net/2015/03/21/how-to-eliminate-spam-and-protect-your-name-with-dmarc/
+
+- name: 'dmarc | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '/etc/opendmarc'
+    state: 'absent'
+  when: mail_purge_install
+
+- name: 'dmarc | add postfix user to opendmarc group'
+  ansible.builtin.user:
+    name: '{{ mail_postfix_user }}'
+    append: true
+    groups:
+      - '{{ mail_opendmarc_group }}'
+    state: present
+
+- name: 'dmarc | create opendmarc directory'
+  ansible.builtin.file:
+    path:  '/etc/opendmarc'
+    owner: '{{ mail_opendmarc_user }}'
+    group: '{{ mail_opendmarc_group }}'
+    mode:  0700
+    state: 'directory'
+
+- name: 'dmarc | set hostnames/ip/cidr addresses ignored by dmarc'
+  ansible.builtin.copy:
+    dest:    '/etc/opendmarc/ignore.hosts'
+    owner:   '{{ mail_opendmarc_user }}'
+    group:   '{{ mail_opendmarc_group }}'
+    mode:    0400
+    content: '{{ __trusted_networks }}'
+  notify: 'restart opendmarc'

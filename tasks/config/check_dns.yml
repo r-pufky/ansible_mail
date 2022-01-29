@@ -1,0 +1,146 @@
+---
+###############################################################################
+# Check DNS Records
+###############################################################################
+# Ensure required mail DNS records exist and can be resolved correctly.
+#
+# Confirm naked domain (example.com) has no direct CNAME records (example.com).
+# This will cause mail delivery to fail.
+#
+# Ensure an MX record is created for the bald domain (example.com) that points
+# to the FQDN MX mail name (typically: mail.example.com). We only expect to see
+# a single MX record pointing to the mail server.
+#
+# Ensure A record is created for FQDN MX mail name mapping to a public IP.
+# Confirm that this public IP is the current public IP for the mail server.
+# Also accept 127.0.0.1, or private IP if DNS responses are being overwritten.
+#
+# Args:
+#   domain: string naked domain (example.com) to check.
+#   mail_mx_record: string MX record to use (mail).
+#   __public_ip: string current public ip.
+#   __private_ip: string current private ip.
+
+- name: 'config | query authoritative name server for {{ domain }}'
+  ansible.builtin.command: 'dig {{ domain }}. NS +short'
+  register: _mail_config_ns_query
+  changed_when: false
+  failed_when: _mail_config_ns_query.stdout|length == 0
+
+- name: 'config | set validation tests'
+  ansible.builtin.set_fact:
+    _mail_config_ns:        '{{ _mail_config_ns_query.stdout_lines[0] }}'
+    _mail_config_mx_record: '{{ mail_mx_record }}.{{ domain }}.'
+
+- name: 'config | check mail DNS settings'
+  block:
+    - name: 'config | setup dns test'
+      ansible.builtin.set_fact:
+        _mail_config_retries: '{{ 0 if _mail_config_retries is undefined else _mail_config_retries|int + 1 }}'
+
+    - name: 'config | query naked domain ({{ domain }}) has no direct CNAMEs'
+      ansible.builtin.command: 'dig @{{ _mail_config_ns }} {{ domain }}. cname +short'
+      register: _mail_config_dns_cname_query
+      changed_when: false
+
+    - name: 'config | query naked domain ({{ domain }}) has MX record'
+      ansible.builtin.command: 'dig @{{ _mail_config_ns }} {{ domain }}. mx +short'
+      register: _mail_config_dns_mx_query
+      changed_when: false
+
+    - name: 'config | query MX record for public ip'
+      ansible.builtin.command: 'dig @{{ _mail_config_ns }} {{ _mail_config_mx_record }} a +short'
+      register: _mail_config_dns_mx_a_query
+      changed_when: false
+
+    - name: 'config | query PTR record ip lookup'
+      ansible.builtin.command: 'dig -x {{ __public_ip }}'
+      register: _mail_config_dns_ptr_query
+      changed_when: false
+
+    - name: 'config | sanitize results'
+      ansible.builtin.set_fact:
+        _mail_config_dns_cname:  '{{ _mail_config_dns_cname_query.stdout }}'
+        _mail_config_dns_mx:     '{{ _mail_config_dns_mx_query.stdout_lines[0].split(" ").1 }}'
+        _mail_config_dns_mx_a:   '{{ _mail_config_dns_mx_a_query.stdout }}'
+        _mail_config_mx_a_valid: '["127.0.0.1", "{{ __private_ip }}", "{{ __public_ip }}"]'
+        _mail_config_dns_ptr:    '{{ _mail_config_dns_ptr_query.stdout_lines|select("search", "PTR")|first }}'
+
+    - name: 'config | MANUAL ACTION REQUIRED'
+      ansible.builtin.debug:
+        msg: |
+          Query Results
+          -------------
+            Naked domain CNAME:     {{ not _mail_config_dns_cname|length|bool }}
+            Naked domain MX record: {{ _mail_config_dns_mx }}
+            MX A record:            {{ _mail_config_dns_mx_a }}
+            Detected public IP:     {{ __public_ip }}
+            Detected reverse DNS:   {{ _mail_config_dns_ptr }}
+
+          DNS Records
+          -----------
+            Set the following DNS records on your provider:
+
+              MX Record:    {{ domain }}.    MX    300    10    {{ _mail_config_mx_record }}
+              A Record:     {{ _mail_config_mx_record }}    A    300    {{ __public_ip }}
+              PTR Record:   {{ __public_ip|ansible.netcommon.ipaddr('revdns') }}    PTR    300    {{ __mail_mx_fqdn }}.
+
+            Remove the following DNS records on your provider:
+
+              CNAME Record: {{ domain }}.    CNAME    {ANY}    {ANY}.
+
+          Errors
+          ------
+            MX A record must point to the current public ip.
+
+                Current nameserver: {{ __resolv_nameservers }}
+                Valid results: {{ _mail_config_mx_a_valid|join(', ') }}
+
+              If the MX A record returns an internal IP, check DNAT rules / DNS servers;
+              queries are being captured and responses re-written -- you must manually
+              validate that the authoritative DNS server is set correctly.
+
+              These results will be accepted as valid reponses.
+
+            PTR record must point to the current DNS name in the MX A record.
+
+              Highly controlled for ISPs (typically cannot be set unless in hosted
+              environments). If you have the ability to set this, **do so**. Contributes highly
+              to domain reputation.
+
+              Invalid results will be accepted as valid responses; but there is a substantially
+              higher chance of getting blacklisted without it.
+
+          ACTIONS
+          -------
+            Confirm records have been created and continue to validate.
+
+    - name: 'config | pause until manually confirmed'
+      ansible.builtin.pause:
+        echo: false
+      when: mail_confirmation_prompt
+
+    - name: 'config | verify dns records'
+      ansible.builtin.meta: noop
+      # no bare domain cnames
+      # mx record must exist
+      # use the first matching mx record against user setting
+      # mx a record must exist
+      # mx a record must point to public ip, or localhost / private ip (with warning)
+      # PTR records do not need to exist (ISP case with no PTR control)
+      failed_when: |
+        _mail_config_dns_cname|length > 0 or
+        _mail_config_dns_mx|length == 0 or
+        _mail_config_dns_mx != _mail_config_mx_record or
+        _mail_config_dns_mx_a|length == 0 or
+        _mail_config_dns_mx_a in _mail_config_mx_a_valid
+  rescue:
+    - name: 'config | maximum number of retries exceeded, failing setup'
+      ansible.builtin.fail:
+        msg: |
+          Mail DNS records could not be confirmed. Please check that your DNS
+          changes have propagated. These can take up to 24 hours.
+      when: _mail_config_retries|int == 5
+
+    # recursively include until confirmed.
+    - ansible.builtin.include_tasks: check_dns.yml

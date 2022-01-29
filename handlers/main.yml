@@ -1,0 +1,120 @@
+---
+###############################################################################
+# Mail Handlers
+###############################################################################
+# Handlers for all services. Guidance for when postfix should be reloaded vs.
+# restarted is detailed in references.
+#
+# Postfix/Postmap:
+#   Postfix lookup tables accessed using PCRE, CIDR, REGEX, TEXTHASH do not
+#   require postmap to be run to be consumed. This will have no noticable
+#   impact on performance for small sites (< 30 mails per second, 500k mails
+#   per day).
+#
+# Reference:
+# * http://www.postfix.org/DATABASE_README.html#detect
+
+###############################################################################
+# Reload Handlers
+###############################################################################
+- name: 'reload amavis'
+  ansible.builtin.systemd:
+    name:    'amavis'
+    enabled: true
+    state:   'reloaded'
+
+- name: 'reload postfix'
+  ansible.builtin.systemd:
+    name:    'postfix'
+    enabled: true
+    state:   'reloaded'
+
+- name: 'reload systemd'
+  ansible.builtin.systemd:
+    daemon-reload: true
+
+###############################################################################
+# Update Handlers
+###############################################################################
+- name: 'update aliases'
+  ansible.builtin.command: 'newaliases'
+  notify: 'reload postfix'
+
+- name: 'update postscreen helo whitelist'
+  ansible.builtin.command: 'postmap /etc/postfix/postscreen/helo_whitelist'
+  notify: 'reload postfix'
+
+- name: 'update postscreen rbl whitelist'
+  ansible.builtin.command: 'postmap /etc/postfix/postscreen/rbl_whitelist'
+  notify: 'reload postfix'
+
+- name: 'update postscreen custom whitelist'
+  ansible.builtin.command: 'postmap /etc/postfix/postscreen/custom_whitelist'
+  notify: 'reload postfix'
+
+- name: 'update sieve'
+  ansible.builtin.shell: 'for filter in `ls -1 *.sieve`; do /usr/bin/sievec ${filter}; done'
+  args:
+    chdir: '{{ item }}'
+  loop:
+    - '/usr/lib/dovecot/sieve-global/before'
+    - '/usr/lib/dovecot/sieve-global/after'
+  notify: 'restart dovecot'
+
+###############################################################################
+# Restart Handlers
+###############################################################################
+- name: 'restart amavis'
+  ansible.builtin.systemd:
+    name:    'amavis'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart clamav'
+  ansible.builtin.systemd:
+    name:    'clamav-daemon'
+    enabled: true
+    state:   'restarted'
+  notify: 'restart clamav freshclam'
+
+- name: 'restart clamav freshclam'
+  ansible.builtin.systemd:
+    name:    'clamav-freshclam'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart dovecot'
+  ansible.builtin.systemd:
+    name:    'dovecot'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart opendkim'
+  ansible.builtin.systemd:
+    name:    'opendkim'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart opendmarc'
+  ansible.builtin.systemd:
+    name:    'opendmarc'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart postfix'
+  ansible.builtin.systemd:
+    name:    'postfix'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart postgrey'
+  ansible.builtin.systemd:
+    name:    'postgrey'
+    enabled: true
+    state:   'restarted'
+
+- name: 'restart postsrsd'
+  ansible.builtin.systemd:
+    name:    'postsrsd'
+    enabled: true
+    state:   'restarted'

@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Post SRSD User
+###############################################################################
+
+- name: 'user | create postsrsd group'
+  ansible.builtin.group:
+    name:  'postsrsd'
+    gid:   610
+    state: 'present'
+
+- name: 'user | create postsrsd user'
+  ansible.builtin.user:
+    name:            'postsrsd'
+    group:           'postsrsd'
+    uid:             610
+    shell:           '/usr/sbin/nologin'
+    home:            '/var/lib/postsrsd'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

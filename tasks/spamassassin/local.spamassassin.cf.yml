@@ -1,0 +1,49 @@
+---
+###############################################################################
+# Spamassassin Custom Configuration
+###############################################################################
+# Spamassassin uses a robust scoring framework and plug-ins to integrate a wide
+# range of advanced heuristic and statistical analysis tests on email headers
+# and body text including text analysis, Bayesian filtering, DNS blocklists,
+# and collaborative filtering databases.
+#
+# Use /etc/spamassassin/local.cf to override default configuration settings,
+# per debian standard.
+#
+# Spamassassin is NOT run as a independent service, but called via amavis. This
+# does not require spamc/spamd to run.
+#
+# Reference:
+# * https://spamassassin.apache.org
+# * https://www.ijs.si/software/amavisd/#faq-spam
+# * https://www.binarytides.com/install-spamassassin-with-postfix-dovecot/
+
+- name: 'spamassassin main | enable mail plugin shortcircuit for strongly whitelisted emails'
+  ansible.builtin.lineinfile:
+    path:   '/etc/spamassassin/local.cf'
+    regexp: '^#?\s*ifplugin Mail::SpamAssassin::Plugin::Shortcircuit'
+    line:   'ifplugin Mail::SpamAssassin::Plugin::Shortcircuit'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'reload amavis'
+
+- name: 'spamassassin main | enable razor spam scoring for better spam detection'
+  ansible.builtin.lineinfile:
+    path:   '/etc/spamassassin/local.cf'
+    regexp: '^#?\s*razor_config'
+    line:   'razor_config /etc/razor/razor-agent.conf'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'reload amavis'
+
+- name: 'spamassassin main | enable pyzor spam scoring and sharing for better spam detection'
+  ansible.builtin.lineinfile:
+    path:   '/etc/spamassassin/local.cf'
+    regexp: '^#?\s*pyzor_options'
+    line:   'pyzor_options --homedir /etc/mail/spamassassin'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'reload amavis'

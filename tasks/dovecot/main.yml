@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: local.dovecot.conf.yml
+- ansible.builtin.include_tasks: systemd_dovecot_overrides.yml
+- ansible.builtin.include_tasks: sieve_filters.yml
+- ansible.builtin.include_tasks: manage_dovecot_users.yml

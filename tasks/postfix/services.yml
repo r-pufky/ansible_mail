@@ -1,0 +1,350 @@
+---
+###############################################################################
+# Postfix MTA Client Service Definitions
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix client services definitions. When multiple lines specify
+# the same service name and type, only the last one is remembered.  Otherwise,
+# the order of master.cf service definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in master.cf.
+#
+# ==========================================================================
+# service type  private unpriv  chroot  wakeup  maxproc cmd + args
+#               (yes)   (yes)   (no)    (never) (100)
+# ==========================================================================
+#
+# Ports:
+# * 25/tcp,udp MTA smtp email submission
+# * 143/tcp,udp imapv4
+# * 465/tcp SSL MUA email submission (defactor standard)
+# * 587/tcp,udp TLS MUA email submission (RFC 2476)
+# * 993/tcp,udp imapv4 over TLS
+# * 10025/tcp smtpd receiving from amavis incoming email queue (localhost-localhost)
+#
+# Args:
+#   mail_vmail_user: string vmail user.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * http://www.postfix.org/master.5.html
+# * https://workaround.org/ispmail
+
+- name: 'postfix master | set settings base config'
+  ansible.builtin.copy:
+    dest:    '/etc/postfix/master.cf'
+    owner:   'root'
+    group:   'root'
+    mode:    0644
+    force:   true
+    content: ''
+  changed_when: false
+
+# this will disable default smtp submission service 'smtp/inet=smtp inet n - y - - smtpd'
+- name: 'postfix master smtp | enable inet outgoing submissions to smtp and forward to postscreen'
+  ansible.builtin.command: "postconf -M 'smtp/inet=smtp inet n - y - 1 postscreen'"
+  changed_when: false
+
+- name: 'postfix master smtpd | enable inet incoming submissions to smtpd'
+  ansible.builtin.command: "postconf -M 'smtpd/inet=smtpd pass - - y - - smtpd'"
+  changed_when: false
+
+- name: 'postfix master dnsblog | enable dns blacklisting service'
+  ansible.builtin.command: "postconf -M 'dnsblog/unix=dnsblog unix - - y - 0 dnsblog'"
+  changed_when: false
+
+- name: 'postfix master tlsproxy | enable tls proxy'
+  ansible.builtin.command: "postconf -M 'tlsproxy/unix=tlsproxy unix - - y - 0 tlsproxy'"
+  changed_when: false
+
+- name: 'postfix master submission | enable inet incoming submission service on 587 requiring tls/starttls'
+  ansible.builtin.command: "postconf -M 'submission/inet=submission inet n - y - - smtpd'"
+  changed_when: false
+
+- name: 'postfix master submission | generate options for submission/inet'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_submission:
+      - 'syslog_name=postfix/submission'
+      - 'smtpd_tls_security_level=encrypt'             # mandatory encryption
+      - 'smtpd_tls_wrappermode=no'                     # force use of startttls (smtps port 465 uses wrapper mode)
+      - 'smtpd_sasl_auth_enable=yes'                   # enable saslauth
+      - 'smtpd_sasl_type=dovecot'                      # use dovecot backend for saslauth
+      - 'smtpd_sasl_path=private/auth'                 # use /var/spool/postfix/private/auth (dovecot/10-master.conf)
+      - 'smtpd_reject_unlisted_recipient=no'           # use restrictions for rejections instead of user maps
+      - 'smtpd_sasl_authenticated_header=yes'          # add authenticated username to received message headers
+      - 'smtpd_client_restrictions=permit_sasl_authenticated,reject' # require saslauth success, or reject
+      - 'smtpd_relay_restrictions=permit_sasl_authenticated,reject'  # require saslauth success, or reject
+      - 'milter_macro_daemon_name=ORIGINATING'         # Use origin for determining email submission (for amavis)
+      - 'content_filter=smtp-amavis:[127.0.0.1]:10026' # run authenticated email through dedicated amavis service (clamav, spamassassin)
+      - 'cleanup_service_name=sender-cleanup'          # Standardize addresses, canoncial mapping, virtual mappings
+
+- name: 'postfix master submission | set options for submission/inet'
+  ansible.builtin.command: "postconf -P 'submission/inet/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_submission }}'
+
+- name: 'postfix master smtps | enable inet incoming submission service on 465 (for MS outlook clients)'
+  ansible.builtin.command: "postconf -M 'smtps/inet=smtps inet n - y - - smtpd'"
+  changed_when: false
+
+- name: 'postfix master smtps | generate options for smtps/inet'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_smtps:
+      - 'syslog_name=postfix/smtps'
+      - 'smtpd_tls_wrappermode=yes'                    # use non-standard TLS wrapper (for outlook clients)
+      - 'smtpd_sasl_auth_enable=yes'                   # enable saslauth
+      - 'smtpd_sasl_type=dovecot'                      # use dovecot backend for saslauth
+      - 'smtpd_sasl_path=private/auth'                 # use /var/spool/postfix/private/auth (dovecot/10-master.conf)
+      - 'smtpd_reject_unlisted_recipient=no'           # use restrictions for rejections instead of user maps
+      - 'smtpd_sasl_authenticated_header=yes'          # add authenticated username to received message headers
+      - 'smtpd_client_restrictions=permit_sasl_authenticated,reject' # require saslauth success, or reject
+      - 'smtpd_relay_restrictions=permit_sasl_authenticated,reject'  # require saslauth success, or reject
+      - 'milter_macro_daemon_name=ORIGINATING'         # Use origin for determining email submission (for amavis)
+      - 'content_filter=smtp-amavis:[127.0.0.1]:10026' # run authenticated email through dedicated amavis service (clamav, spamassassin)
+      - 'cleanup_service_name=sender-cleanup'          # Standardize addresses, canoncial mapping, virtual mappings
+
+- name: 'postfix master smtps | set options for smtps/inet'
+  ansible.builtin.command: "postconf -P 'smtps/inet/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_smtps }}'
+
+- name: 'postfix master pickup | prevent spam-reporting from being classified as spam when delivered to maildrop'
+  ansible.builtin.command: "postconf -M 'pickup/unix=pickup unix n - y 60 1 pickup'"
+  changed_when: false
+
+- name: 'postfix master pickup | generate options for pickup/unix'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_pickup:
+      - 'content_filter='                                # no filter (send entire message)
+      - 'receive_override_options=no_header_body_checks' # Prevent spam-reporting from being classified as spam
+
+- name: 'postfix master pickup | set options for pickup/unix'
+  ansible.builtin.command: "postconf -P 'pickup/unix/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_pickup }}'
+
+- name: 'postfix master cleanup | enable incoming message cleanup and postfix queueing'
+  ansible.builtin.command: "postconf -M 'cleanup/unix=cleanup unix n - y - 0 cleanup'"
+  changed_when: false
+
+- name: 'postfix master qmgr | enable queue manager '
+  ansible.builtin.command: "postconf -M 'qmgr/unix= qmgr unix n - n 300 1 qmgr'"
+  changed_when: false
+
+- name: 'postfix master tlsmgr | enable tls session cache and prng manager'
+  ansible.builtin.command: "postconf -M 'tlsmgr/unix=tlsmgr unix - - y 1000? 1 tlsmgr'"
+  changed_when: false
+
+- name: 'postfix master rewrite | enable address rewriting'
+  ansible.builtin.command: "postconf -M 'rewrite/unix=rewrite unix - - y - - trivial-rewrite'"
+  changed_when: false
+
+- name: 'postfix master bounce | enable delivery status reports (bounce)'
+  ansible.builtin.command: "postconf -M 'bounce/uinix=bounce unix - - y - 0 bounce'"
+  changed_when: false
+
+- name: 'postfix master defer | enable delivery status reports (defer)'
+  ansible.builtin.command: "postconf -M 'defer/unix=defer unix - - y - 0 bounce'"
+  changed_when: false
+
+- name: 'postfix master trace | enable delivery status reports (trace)'
+  ansible.builtin.command: "postconf -M 'trace/unix=trace unix - - y - 0 bounce'"
+  changed_when: false
+
+- name: 'postfix master verify | enable address verification service'
+  ansible.builtin.command: "postconf -M 'verify/unix=verify unix - - y - 1 verify'"
+  changed_when: false
+
+- name: 'postfix master flush | enable fast flush service'
+  ansible.builtin.command: "postconf -M 'flush/unix=flush unix n - y 1000? 0 flush'"
+  changed_when: false
+
+- name: 'postfix master proxymap | enable lookup table (read) proxy service'
+  ansible.builtin.command: "postconf -M 'proxymap/unix=proxymap unix - - n - - proxymap'"
+  changed_when: false
+
+- name: 'postfix master proxywrite | enable lookup table (write) proxy service'
+  ansible.builtin.command: "postconf -M 'proxywrite/unix=proxywrite unix - - n - 1 proxymap'"
+  changed_when: false
+
+- name: 'postfix master smtp | enable local outgoing submissions to smtp'
+  ansible.builtin.command: "postconf -M 'smtp/unix=smtp unix - - y - - smtp'"
+  changed_when: false
+
+- name: 'postfix master relay | enable local relay service '
+  ansible.builtin.command: "postconf -M 'relay/unix=relay unix - - y - - smtp'"
+  changed_when: false
+
+- name: 'postfix master relay | set options for relay/unix'
+  ansible.builtin.command: "postconf -P 'smtps/inet/syslog_name=postfix/$service_name'"
+  changed_when: false
+
+- name: 'postfix master showq | enable local list mail queue service '
+  ansible.builtin.command: "postconf -M 'showq/unix=showq unix n - y - - showq'"
+  changed_when: false
+
+- name: 'postfix master error | enable local error mail delivery agent service'
+  ansible.builtin.command: "postconf -M 'error/unix=error unix - - y - - error'"
+  changed_when: false
+
+- name: 'postfix master retry | enable local retry mail delivery agent service'
+  ansible.builtin.command: "postconf -M 'retry/unix=retry unix - - y - - error'"
+  changed_when: false
+
+- name: 'postfix master discard | enable local discard mail delivery agent service'
+  ansible.builtin.command: "postconf -M 'discard/unix=discard unix - - y - - discard'"
+  changed_when: false
+
+- name: 'postfix master local | enable local mail delivery service '
+  ansible.builtin.command: "postconf -M 'local/unix=local unix - n n - - local'"
+  changed_when: false
+
+- name: 'postfix master virtual | enable local virtual alias table format service'
+  ansible.builtin.command: "postconf -M 'virtual/unix=virtual unix - n n - - virtual'"
+  changed_when: false
+
+- name: 'postfix master lmtp | enable local mail transfer protcol (lmtp)'
+  ansible.builtin.command: "postconf -M 'lmtp/unix=lmtp unix - - y - - lmtp'"
+  changed_when: false
+
+- name: 'postfix master anvil | enable local session count and request rate control service'
+  ansible.builtin.command: "postconf -M 'anvil/unix=anvil unix - - y - 1 anvil'"
+  changed_when: false
+
+- name: 'postfix master scache | enable local shared connection cache service'
+  ansible.builtin.command: "postconf -M 'scache/unix=scache unix - - y - 1 scache'"
+  changed_when: false
+
+- name: 'postfix master postlog | enable local postfix-compatible logging utility service'
+  ansible.builtin.command: "postconf -M 'postlog/unix-dgram=postlog unix-dgram n - n - 1 postlogd'"
+  changed_when: false
+
+- name: 'postfix master maildrop | enable local mail delivery filter/agent service'
+  ansible.builtin.command: "postconf -M 'maildrop/unix=maildrop unix - n n - - pipe flags=DRhu user={{ mail_vmail_user }} argv=/usr/bin/maildrop -d ${recipient}'"
+  changed_when: false
+
+- name: 'postfix master uucp | enable local unix to unix copy protocol'
+  ansible.builtin.command: "postconf -M 'uucp/unix=uucp unix - n n - - pipe uucp/unix/flags=Fqhu user=uucp argv=uux -r -n -z -a$sender - $nexthop!rmail ($recipient)'"
+  changed_when: false
+
+- name: 'postfix master ifmail | enable local fidonet protocols'
+  ansible.builtin.command: "postconf -M 'ifmail/unix=ifmail unix - n n - - pipe flags=F user=ftn argv=/usr/lib/ifmail/ifmail -r $nexthop ($recipient)'"
+  changed_when: false
+
+- name: 'postfix master bsmtp | enable local bacula smtp mail submission client (legacy)'
+  ansible.builtin.command: "postconf -M 'bsmtp/unix=bsmtp unix - n n - - pipe flags=Fq. user=bsmtp argv=/usr/lib/bsmtp/bsmtp -t$nexthop -f$sender $recipient'"
+  changed_when: false
+
+# Hardcoded by default to use 2 processors. Set 1/2 of available processors, min 1.
+- name: 'postfix master scailmail-backend | enable local scalemail mail submission client (legacy)'
+  ansible.builtin.command: postconf -M 'scalemail-backend/unix=scalemail-backend unix - n n - {{ "%i"|format(ansible_processor_nproc/2|round(1,"floor")) }} pipe flags=R user=scalemail argv=/usr/lib/scalemail/bin/scalemail-store ${nexthop} ${user} ${extension}'
+  changed_when: false
+
+- name: 'postfix master mailman | enable gnu mailing list manager'
+  ansible.builtin.command: "postconf -M 'mailman/unix=mailman unix - n n - - pipe flags=FR user=list argv=/usr/lib/mailman/bin/postfix-to-mailman.py ${nexthop} ${user}'"
+  changed_when: false
+
+- name: 'postfix master cleanup | modify outgoing email headers to protect privacy'
+  ansible.builtin.command: "postconf -M 'sender-cleanup/unix=sender-cleanup unix n - y - 0 cleanup'"
+  changed_when: false
+
+- name: 'postfix master pickup | generate options for cleanup/unix'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_cleanup:
+      - 'syslog_name=postfix/sender-cleanup'
+      - 'header_checks=pcre:/etc/postfix/pcre/sender_header_checks'
+
+- name: 'postfix master pickup | set options for cleanup/unix'
+  ansible.builtin.command: "postconf -P 'sender-cleanup/unix/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_cleanup }}'
+
+- name: 'postfix master policyd-spf | enable local policy daemon for spf checking'
+  ansible.builtin.command: "postconf -M 'policyd-spf/unix=policyd-spf unix - n n - 0 spawn policyd-spf/unix/user=policyd-spf argv=/usr/bin/policyd-spf'"
+  changed_when: false
+
+# Use up to the total number of processors on the machine
+- name: 'postfix master smtp-amavis | enable local amavis service for accepting email to filter'
+  ansible.builtin.command: "postconf -M 'smtp-amavis/unix=smtp-amavis unix - - n - {{ ansible_processor_nproc }} smtp'"
+  changed_when: false
+
+- name: 'postfix master smtp-amavis | generate options for smtp-amavis/unix'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_amavis:
+      - 'syslog_name=postfix/amavis'
+      - 'smtp_data_done_timeout=1200'     # maximum time to submit an email
+      - 'smtp_send_xforward_command=yes'  # forward name,address,protocol,HELO to content filter
+      - 'smtp_dns_support_level=disabled' # disable DNS MX A, getaddrinfo, /etc/hosts validation; not needed for postfix/amavis interactions
+      - 'max_use=20'                      # maximum number of connections at once
+      - 'smtp_tls_security_level=none'    # disable tls (not required for postfix-amavis interactions)
+
+- name: 'postfix master smtp-amavis | set options for smtp-amavis/unix'
+  ansible.builtin.command: "postconf -P 'smtp-amavis/unix/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_amavis }}'
+
+- name: 'postfix master smtpd | run additional smtpd daemon on 10025 to receive mail back from amavis'
+  ansible.builtin.command: "postconf -M '127.0.0.1:10025/inet=127.0.0.1:10025 inet n - n - - smtpd'"
+  changed_when: false
+
+- name: 'postfix master smtpd | generate options for 127.0.0.1:10025/inet (smtpd to receive mail back from amavis)'
+  ansible.builtin.set_fact:
+    _mail_postfix_master_amavis_stmpd:
+      - 'syslog_name=postfix/10025'
+      - 'content_filter='                       # no filter (send entire message)
+      - 'mynetworks=127.0.0.0/8'                # restrict to localhost only
+      - 'local_recipient_maps='                 # disable local recipient (email user) validation
+      - 'relay_recipient_maps='                 # reject email to unknown relay users
+      - 'smtpd_restriction_classes='            # disable user-define group access restrictions
+      - 'smtpd_tls_security_level=none'         # disable tls (not required for amavis-postfix interactions)
+      - 'smtpd_delay_reject=no'                 # do not wait for RCPT TO/ETRN command before evaluating restrictions
+      - 'smtpd_client_restrictions=permit_mynetworks,reject'    # permit trusted networks only (localhost only, defined above)
+      - 'smtpd_helo_restrictions='              # disable restrictions for HELO commands
+      - 'smtpd_sender_restrictions='            # disable restrictions for MAIL FROM commands
+      - 'smtpd_recipient_restrictions=permit_mynetworks,reject' # permit trusted networks only (localhost only, defined above)
+      - 'smtpd_data_restrictions=reject_unauth_pipelining'      # reject out-of-order or unprompted SMTP commands
+      - 'smtpd_end_of_data_restrictions='       # disable restrictions for SMTP END-OF-DATA commands
+      - 'smtpd_error_sleep_time=0'              # do not delay postfix responses to SMTP commands
+      - 'smtpd_soft_error_limit=1001'           # accept 1001 SMTP client errors without mail delivery. slows down all client responses when exceeded
+      - 'smtpd_hard_error_limit=1000'           # accept 1000 SMTP client errors without mail delivery. disconnects client when exceeded
+      - 'smtpd_client_connection_count_limit=0' # disable maximum number of AUTH commands any client can send in one minute
+      - 'smtpd_client_connection_rate_limit=0'  # disable maximum number of simultaneous client connections
+      - 'receive_override_options=no_header_body_checks,no_unknown_recipient_checks,no_milters' # disable validation and restrictions for header/body checks, unknown recipient, milters
+
+- name: 'postfix master smtpd | set options for 127.0.0.1:10025/inet (smtpd to receive mail back from amavis)'
+  ansible.builtin.command: "postconf -P '127.0.0.1:10025/inet/{{ item }}'"
+  changed_when: false
+  loop: '{{ _mail_postfix_master_amavis_stmpd }}'
+
+- name: 'postfix settings | validate postfix master.cf'
+  ansible.builtin.shell: 'set -o pipefail && postfix check 2>&1 | grep master'
+  args:
+    executable: '/bin/bash'
+  register: _mail_postfix_check_master
+  changed_when: false
+  failed_when: false # no match exit code 1
+
+
+- name: 'postfix settings | master.cf validation failed'
+  ansible.builtin.fail:
+    msg: |
+      Postfix master.cf configuration failure:
+
+      {{ _mail_postfix_check_master.stdout }}
+  when: _mail_postfix_check_master.stdout|length > 0
+
+- name: 'postfix settings | force reload postfix'
+  ansible.builtin.debug:
+    msg: manually queueing postfix reload
+  changed_when: true
+  notify: 'reload postfix'

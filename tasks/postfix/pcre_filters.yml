@@ -1,0 +1,134 @@
+---
+###############################################################################
+# Postfix MTA PCRE (Perl Compatible Regular Expressions)
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Postfix/Postmap:
+#   Postfix in-memory lookup tables (PCRE, CIDR, REGEX, TEXTHASH) do not
+#   require 'postmap', but may require 'postfix reload' on long running
+#   commmands like trivial-rewrite.
+#
+#   Using berkley DB (HASH, CDB, DBM, LMDB, SDBM) requires postmap to be run
+#   but does not require 'postfix reload' for changes to be recognized.
+#
+#   As this is a small postfix site (< 30 mails per second, 500k mails/day ish)
+#   we prefer in-memory lookup tables as the data is trivially small, and
+#   changes will be applied through this role, which forces a reload anyways.
+#
+# Reference:
+# * http://www.postfix.org/
+# * https://www.pcre.org/
+# * https://linux.die.net/man/5/pcre_table
+# * https://linux.die.net/man/1/postmap
+# * http://www.postfix.org/DATABASE_README.html
+# * https://www.iana.org/assignments/message-headers/message-headers.xhtml
+# * https://serverfault.com/questions/318334/how-to-enforce-sender-address-to-be-logged-in-userexample-org-in-postfix
+
+- name: 'postfix pcre | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '/etc/postfix/pcre/'
+    state: 'absent'
+  when: mail_purge_install
+
+- name: 'postfix pcre | configure header checks (no rules defined)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/pcre/header_checks'
+    line:   '# No explicit rules defined.'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+
+- name: 'postfix pcre | configure body checks (no rules defined)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/pcre/body_checks'
+    line:   '# No explicit rules defined.'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+
+# https://datatracker.ietf.org/doc/rfc3848/
+- name: 'postfix pcre | remove ESMTPSA headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*Received:.*with ESMTPSA/'
+    line:   '/^\s*Received:.*with ESMTPSA/ IGNORE'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+
+- name: 'postfix pcre | remove amavis scanning headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*Received:.*amavisd-new/'
+    line:  '/^\s*Received:.*amavisd-new/ IGNORE'
+    state: 'present'
+
+- name: 'postfix pcre | remove client ip headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*X-Originating-IP:/'
+    line:  '/^\s*X-Originating-IP:/ IGNORE'
+    state: 'present'
+
+- name: 'postfix pcre | remove email software client used to send mail headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*X-Mailer:/'
+    line:  '/^\s*X-Mailer:/ IGNORE'
+    state: 'present'
+
+# https://en.wikipedia.org/wiki/MIME#MIME-Version
+- name: 'postfix pcre | only use mime-version 1.0 for sent emails (impossible to define version > 1.0)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*Mime-Version: 1.0.*/'
+    line:  '/^\s*Mime-Version: 1.0.*/ REPLACE Mime-Version: 1.0'
+    state: 'present'
+
+- name: 'postfix pcre | remove enigmail version headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*X-Enigmail/'
+    line:  '/^\s*X-Enigmail/ IGNORE'
+    state: 'present'
+
+# Search for non-standard header (missing :)
+- name: 'postfix pcre | remove email software client (non-standard) used to send mail headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*X-Mailer/'
+    line:  '/^\s*X-Mailer/ IGNORE'
+    state: 'present'
+
+# Search for non-standard header (missing :)
+- name: 'postfix pcre | remove client ip (non-standard) headers for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*X-Originating-IP/'
+    line:  '/^\s*X-Originating-IP/ IGNORE'
+    state: 'present'
+
+- name: 'postfix pcre | remove headers identifying mail recieved from localhost for sent emails (privacy)'
+  ansible.builtin.lineinfile:
+    path:  '/etc/postfix/pcre/sender_header_checks'
+    search_string: '/^\s*Received: from.*127.0.0.1/'
+    line:  '/^\s*Received: from.*127.0.0.1/ IGNORE'
+    state: 'present'
+
+- name: 'postfix pcre | configure sender login maps to use entire login name'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/pcre/sender_login_maps'
+    line:   '/^(.*)$/ ${1}'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'

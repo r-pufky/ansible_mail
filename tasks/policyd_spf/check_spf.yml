@@ -1,0 +1,99 @@
+---
+###############################################################################
+# Sender Policy Framework
+###############################################################################
+# Protocol by which ADMDs can authorize hosts to use their domain names in the
+# "MAIL FROM" or "HELO" identities. Compliant ADMDs publish Sender Policy
+# Framework (SPF) records in the DNS specifying which hosts are permitted to
+# use their names, and compliant mail receivers use the published SPF records
+# to test the authorization of sending Mail Transfer Agents (MTAs) using a
+# given "HELO" or "MAIL FROM" identity during a mail transaction.
+#
+# An additional benefit to mail receivers is that after the use of an identity
+# is verified, local policy decisions about the mail can be made based on the
+# sender's domain, rather than the host's IP address. This is advantageous
+# because reputation of domain names is likely to be more accurate than
+# reputation of host IP addresses since domains are likely to be more stable
+# over a longer period. Furthermore, if a claimed identity fails verification,
+# local policy can take stronger action against such email, such as rejecting
+# it.
+#
+# No specific system configuration needs to be done for policyd-spf; outside of
+# configuring DNS records exist and setup within postfix.
+#
+# Args:
+#   domain: string naked domain (example.com) to check.
+#   __mail_mx_fqdn: string primary domain FQDN MX record (mail.example.com).
+#
+# Reference:
+# * https://datatracker.ietf.org/doc/rfc7208/
+# * http://www.open-spf.org/SPF_Record_Syntax/
+
+- name: 'spf | query authoritative name server for {{ domain }}'
+  ansible.builtin.command: 'dig {{ domain }}. NS +short'
+  register: _mail_spf_ns_query
+  changed_when: false
+  failed_when: _mail_spf_ns_query.stdout|length == 0
+
+- name: 'spf | set validation tests'
+  ansible.builtin.set_fact:
+    _mail_spf_ns:     '{{ _mail_spf_ns_query.stdout_lines[0] }}'
+    _mail_spf_record: 'v=spf1 a:{{ __mail_mx_fqdn }} mx -all'
+
+- name: 'spf | check SPF DNS settings'
+  block:
+    - name: 'spf | setup dns test'
+      ansible.builtin.set_fact:
+        _mail_spf_retries: '{{ 0 if _mail_spf_retries is undefined else _mail_spf_retries|int + 1 }}'
+
+    - name: 'spf | query TXT SPF record for ({{ domain }})'
+      ansible.builtin.command: 'dig @{{ _mail_spf_ns }} {{ domain }}. txt +short'
+      register: _mail_spf_dns_txt_query
+      changed_when: false
+
+    - name: 'spf | sanitize results'
+      ansible.builtin.set_fact:
+        _mail_spf_dns_txt: '{{ _mail_spf_dns_txt_query.stdout }}'
+
+    - name: 'spf | MANUAL ACTION REQUIRED'
+      ansible.builtin.debug:
+        msg: |
+          Query Results
+          -------------
+            TXT SPF record: {{ _mail_spf_dns_txt }}
+
+          DNS Records
+          -----------
+            Set the following DNS records on your provider:
+
+            TXT Record:   {{ domain }}.        TXT     300     "{{ _mail_spf_record }}"
+
+            Test with quotes first; some providers may require them to be removed. After
+            updating, proceed with validation.
+
+          ACTIONS
+          -------
+            Confirm records have been created and continue to validate.
+
+    - name: 'spf | pause until manually confirmed'
+      ansible.builtin.pause:
+        echo: false
+      when: mail_confirmation_prompt
+
+    - name: 'spf | verify dns records'
+      ansible.builtin.meta: noop
+      # txt spf record must exist
+      # txt spf reocrd must allow mx only
+      failed_when: |
+        _mail_spf_dns_txt|length == 0 or
+        _mail_spf_dns_txt != _mail_spf_record
+  rescue:
+    - name: 'spf | maximum number of retries exceeded, failing setup'
+      ansible.builtin.fail:
+        msg: |
+          TXT SPF DNS records could not be confirmed. Please check that your DNS changes
+          have propagated. These can take up to 24 hours.
+      when: _mail_spf_retries|int == 5
+
+    # recursively include until confirmed.
+    - ansible.builtin.include_tasks: check_spf.yml

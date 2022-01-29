@@ -1,0 +1,8 @@
+---
+- ansible.builtin.include_tasks: local_aliases.yml
+- ansible.builtin.include_tasks: certificates.yml
+- ansible.builtin.include_tasks: mail_storage.yml
+- ansible.builtin.include_tasks: virtual_mail.yml
+- ansible.builtin.include_tasks: pcre_filters.yml
+- ansible.builtin.include_tasks: services.yml
+- ansible.builtin.include_tasks: settings/main.yml

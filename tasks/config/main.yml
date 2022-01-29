@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: load.yml
+- ansible.builtin.include_tasks: install.yml
+- ansible.builtin.include_tasks: validate_config.yml
+  when: __mail_validation_checks

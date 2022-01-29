@@ -1,0 +1,32 @@
+---
+###############################################################################
+# Clamav User
+###############################################################################
+# Clamav/Amavis users need to be added to the each others' group; use append
+# during account creation to prevent group removal and OOO errors.
+#
+# No privileges.
+
+- name: 'user | create clamav group'
+  ansible.builtin.group:
+    name:  'clamav'
+    gid:   601
+    state: 'present'
+
+- name: 'user | create clamav user'
+  ansible.builtin.user:
+    name:            'clamav'
+    append:          true
+    group:           'clamav'
+    groups:
+      - 'clamav'
+    uid:             601
+    shell:           '/usr/sbin/nologin'
+    home:            '/var/lib/clamav'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

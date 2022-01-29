@@ -1,0 +1,29 @@
+---
+###############################################################################
+# Postfix User
+###############################################################################
+# Postfix is a default account in debian.
+
+- name: 'user | create postfix group'
+  ansible.builtin.group:
+    name:  'postfix'
+    gid:   107
+    state: 'present'
+
+- name: 'user | create postfix user'
+  ansible.builtin.user:
+    name:            'postfix'
+    group:           'postfix'
+    groups:
+      - 'opendkim'
+      - 'opendmarc'
+    uid:             100
+    shell:           '/usr/sbin/nologin'
+    home:            '/var/spool/postfix'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

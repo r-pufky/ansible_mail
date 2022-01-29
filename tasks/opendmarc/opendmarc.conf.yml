@@ -1,0 +1,154 @@
+---
+###############################################################################
+# OpenDMARC /etc/opendmarc.conf
+###############################################################################
+# OpenDMARC is an open source implementation of the Domain-based Message
+# Authentication, Reporting and Conformance (DMARC) specification.
+#
+# DMARC is a policy for mail transfer, which is already supported by some
+# common mail providers. It depends on Sender Policy Framework and DKIM. DMARC
+# provides a policy for outgoing mail and checks incoming mails for compliance
+# with that policy. The policy is published via a DNS TXT record. It is
+# explained in #DMARC Record. Validation is done in a daemon. For more info see
+# RFC7489.
+#
+# DMARC Set Options:
+# * Policy Level: Quarantine – Fail SPF/DKIM policy, then message is sent to
+#       SPAM/Junk folder. None – Reports possible suspicious mail messages, but
+#       all mail is sent to inbox; useful for testing.
+# * Aggregate Reporting: send to postmaster@ (default).
+# * Forensic Reporting: send to postmaster@ (default).
+# * Subdomain Policy: reject - no subdomain use. (sp=).
+# * Error Reporting: 1 - Generate report to the sending MTA if ANY underlying
+#       checks failed (fo=).
+# * Alignment mode for DKIM: r - Relaxed allows for any subdomain defined in
+#       the DKIM header.
+# * Alignment mode for SPF: r - Relaxed allows for any subdomain.
+# * % messages DMARC applies to: 100% of messages subjected to filtering by the
+#       DMARC policy.
+# * Report Format: afrf
+# * Reporting Interval: 86400
+#
+# _dmarc.example.com. IN TXT "v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com; ruf=mailto:postmaster@example.com; sp=reject; fo=1; ri=86400"
+#
+# Ports:
+# * 8893/tcp dmarc validation service.
+#
+# Args:
+#   mail_postfix_user: string postfix user.
+#   mail_opendmarc_user: string opendmarc user.
+#   mail_opendmarc_group: string opendmarc group.
+#   __trusted_networks: list of networks (hostnames, ip, cidr) localhost ok.
+#   __mail_mx_fqdn: string primary domain FQDN MX record (mail.example.com).
+#
+# Reference:
+# * https://wiki.archlinux.org/title/OpenDMARC
+# * https://en.wikipedia.org/wiki/DMARC
+# * http://www.trusteddomain.org/opendmarc/
+# * https://dmarcguide.globalcyberalliance.org/
+
+- name: 'dmarc socket | use localhost inet connection for dmarc service instead of unix socket'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*Socket'
+    line:   'Socket inet:8893@localhost'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc AuthservID | avoid dmarc naming collisions with amavis'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*AuthservID'
+    line:   'AuthservID HOSTNAME'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc TrustedAuthservIDs | FQDN postfix hostname needed to use auth results from opendkim'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*TrustedAuthservIDs'
+    line:   'TrustedAuthservIDs HOSTNAME,{{ __mail_mx_fqdn }}'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+# Same as current default
+# don't reject failures, add auth results header instead of hard fail
+# RejectFailures false
+
+- name: 'dmarc IgnoreAuthenticatedClients | authenticated users do not require DMARC'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*IgnoreAuthenticatedClients'
+    line:   'IgnoreAuthenticatedClients true'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc RequiredHeaders | reject emails that do not conform to RFC5322'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*RequiredHeaders'
+    line:   'RequiredHeaders true'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc SPFSelfValidate | fallback to manual SPF validation if no SPF results in email headers'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*SPFSelfValidate'
+    line:   'SPFSelfValidate true'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc IgnoreHosts | set ignore hosts file location'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*IgnoreHosts'
+    line:   'IgnoreHosts /etc/opendmarc/ignore.hosts'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+- name: 'dmarc HistoryFile | enable history for aggregate reporting'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*HistoryFile'
+    line:   'HistoryFile /run/opendmarc/opendmarc.dat'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'
+
+# Same as current default
+# set location for computing organizational domain for a given domain name
+# PublicSuffixList /usr/share/publicsuffix/public_suffix_list.dat
+
+# Same as current default
+# log to syslog
+# Syslog true
+
+# Same as current default
+# umask 0002 used for socket, historyfile, pidfile
+# UMask 0002
+
+- name: 'dmarc UserID | run dmarc under opendmarc user'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendmarc.conf'
+    regexp: '^#?\s*UserID'
+    line:   'UserID opendmarc:opendmarc'
+    state:  'present'
+  notify:
+    - 'restart opendmarc'
+    - 'reload postfix'

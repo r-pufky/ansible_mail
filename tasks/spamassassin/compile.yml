@@ -1,0 +1,37 @@
+---
+###############################################################################
+# Spamassassin Compile Rules
+###############################################################################
+# Spamassassin uses a robust scoring framework and plug-ins to integrate a wide
+# range of advanced heuristic and statistical analysis tests on email headers
+# and body text including text analysis, Bayesian filtering, DNS blocklists,
+# and collaborative filtering databases.
+#
+# Compile provided spamassassin rules into C to prevent errors locating
+# body_0.pm in plugin Rule2XSBody; the error message is:
+#
+#   Can't locate Mail/SpamAssassin/CompiledRegexps/body_0.pm in @INC (you may need to install the Mail::SpamAssassin::CompiledRegexps::body_0 module ...
+#
+# Reference:
+# * https://spamassassin.apache.org
+# * https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=854404
+# * https://www.ijs.si/software/amavisd/#faq-spam
+# * https://www.binarytides.com/install-spamassassin-with-postfix-dovecot/
+
+# Exit Codes:
+# 0: update available, downloaded and installed successfully
+# 1: no updates available
+# 2: update available but lint check failed (failure)
+# 3: at least one update succeeded, others failed
+# 4+: errors occurred downloaing/updating; no updates
+- name: 'spamassassin main | update spamassassin rules'
+  ansible.builtin.command: 'sa-update'
+  register: result
+  changed_when: false
+  failed_when: result.rc > 1
+
+# Updating C modules requires amavis restart (amavis restarted end of role)
+- name: 'spamassassin main | compile spamassassin rules'
+  ansible.builtin.command: 'sa-compile'
+  changed_when: false
+  notify: 'restart amavis'

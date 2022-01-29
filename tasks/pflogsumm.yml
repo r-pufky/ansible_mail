@@ -1,0 +1,24 @@
+---
+###############################################################################
+# Postfix Log Summary (pflogsumm)
+###############################################################################
+# A Log Summarizer/Analyzer for the Postfix MTA.
+#
+# Args:
+#   mail_report_interval: string ansible.builtin.cron.special_time, or
+#       'disable'.
+#   __report_recipient: string email recipient of report.
+#
+# Reference:
+# * https://calomel.org/pflogsumm.html
+# * https://jimsun.linxnet.com/downloads/pflogsumm-faq.txt
+
+- name: 'pflogsumm | config log summary reporting'
+  ansible.builtin.cron:
+    name:         'send postfix log summary report'
+    special_time: '{% if mail_report_interval == "disable" %}weekly{% else %}{{ mail_report_interval }}{% endif %}'
+    user:         'root'
+    job:          '/usr/sbin/pflogsumm /var/log/mail.log --iso-date-time --problems-first --rej-add-from --verbose-msg-detail -q | mutt -s "{{ __primary_domain }}: postfix log summary" {{ __report_recipient }}'
+    cron_file:    'postfix_log_summary_report'
+    disabled:     '{% if mail_report_interval == "disable" %}true{% else %}false{% endif %}'
+    state:        'present'

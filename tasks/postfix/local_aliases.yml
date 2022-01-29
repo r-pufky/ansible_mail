@@ -1,0 +1,153 @@
+---
+###############################################################################
+# Postfix MTA Local Aliases
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Local aliases are shortnames used by the local system to deliver mail.
+# Typically these go to the local system user. This sets well-known aliases for
+# mail to be sent to the first defined virtual mail user instead.
+#
+# As we don't know who else is using the system we can't reliably reset
+# /etc/aliases back to a 'known default state'. In this case we reset what
+# we've touched in this configuration.
+#
+# Postfix/Postmap:
+#   Postfix in-memory lookup tables (PCRE, CIDR, REGEX, TEXTHASH) do not
+#   require 'postmap', but may require 'postfix reload' on long running
+#   commmands like trivial-rewrite.
+#
+#   Using berkley DB (HASH, CDB, DBM, LMDB, SDBM) requires postmap to be run
+#   but does not require 'postfix reload' for changes to be recognized.
+#
+#   As this is a small postfix site (< 30 mails per second, 500k mails/day ish)
+#   we prefer in-memory lookup tables as the data is trivially small, and
+#   changes will be applied through this role, which forces a reload anyways.
+#
+#   /etc/aliases requires 'newaliases' to build a new alias DB, requiring
+#   reload.
+#
+# Args:
+#   mail_mx_record: string MX mail record name (mail).
+#   mail_users: list of dicts containing virtual users.
+#       {
+#         user: '{USER}@{DOMAIN}',
+#         pass: '{PASS OR HASH}',
+#         uid: '{OPTIONAL user ID},
+#         gid: '{OPTIONAL group ID},
+#         gecos: '{OPTIONAL gecos field}'
+#         home: '{OPTIONAL home directory}'
+#         shell: '{OPTIONAL user shell}'
+#         extra: '{OPTIONAL extra parameters: mail plugins, ip restrictions}'
+#       }
+#   __primary_domain: string primary mail domain (example.com).
+#   __private_ip: string private network ip (not localhost).
+#   __mail_mx_fqdn: string FQDN MX mail name (mail.example.com).
+#   __mail_etc_hosts: string /etc/hosts line for local DNS resolution.
+#
+# Reference:
+# * http://www.postfix.org/
+# * https://workaround.org/ispmail
+# * http://www.postfix.org/DATABASE_README.html
+# * https://www.linode.com/docs/guides/email-with-postfix-dovecot-and-mysql/
+
+- name: 'postfix aliases | purge existing configuration data' # noqa risky-file-permissions TODO(https://github.com/ansible-community/ansible-lint/issues/1811: absent no mode
+  ansible.builtin.lineinfile:
+    path:   '/etc/aliases'
+    regexp: '{{ item }}'
+    create: true
+    state:  'absent'
+  loop:
+    - '^clamav: '
+    - '^blackhole: '
+    - '^root: '
+  when: mail_purge_install
+  notify: 'update aliases'
+
+- name: 'postfix hosts | purge existing configuration data'
+  ansible.builtin.lineinfile:
+    path:   '/etc/hosts'
+    regexp: '^{{ __private_ip }} '
+    line:   '{{ __private_ip }} {{ ansible_fqdn }} {{ ansible_hostname }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  when: mail_purge_install
+
+- name: 'postfix mailname | purge existing configuration data' # noqa risky-file-permissions TODO(https://github.com/ansible-community/ansible-lint/issues/1811: absent no mode
+  ansible.builtin.file:
+    path:  '/etc/mailname'
+    state: 'absent'
+  when: mail_purge_install
+
+# For mailservers behind NAT, or additional mailservers who serve mail but
+# don't resolve correctly to the MX record -- this will lead to a mail routing
+# loop unless we short-circuit DNS lookups.
+- name: "postfix hosts | set mail final delivery (resolve mail host to local machine if public MX record doesn't match)"
+  ansible.builtin.lineinfile:
+    path:   '/etc/hosts'
+    regexp: '^{{ __private_ip }} '
+    line:   '{{ __mail_etc_hosts }}'
+    create: true
+    mode:   0644
+    state:  'present'
+
+- name: 'postfix mailname | set primary domain to {{ __primary_domain }}'
+  ansible.builtin.copy:
+    dest:  '/etc/mailname'
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+    force: true
+    content: |
+      {{ __primary_domain }}
+
+# This is a pre-existing alias. Ensure it exists.
+- name: 'postfix aliases | direct postmaster mail to root'
+  ansible.builtin.lineinfile:
+    path:   '/etc/aliases'
+    regexp: '^postmaster: '
+    line:   'postmaster: root'
+    create: true
+    mode:   0644
+    state:  'present'
+  register: _mail_postfix_alias_postmaster
+
+- name: 'postfix aliases | direct clamav mail to root'
+  ansible.builtin.lineinfile:
+    path:   '/etc/aliases'
+    regexp: '^clamav: '
+    line:   'clamav: root'
+    create: true
+    mode:   0644
+    state:  'present'
+  register: _mail_postfix_alias_clamav
+
+- name: 'postfix aliases | define blackhole address'
+  ansible.builtin.lineinfile:
+    path:   '/etc/aliases'
+    regexp: '^blackhole: '
+    line:   'blackhole: /dev/null'
+    create: true
+    mode:   0644
+    state:  'present'
+  register: _mail_postfix_alias_blackhole
+
+- name: 'postfix aliases | direct root mail to first defined mail user ({{ mail_users[0].user }})'
+  ansible.builtin.lineinfile:
+    path:   '/etc/aliases'
+    regexp: '^root: '
+    line:   'root: {{ mail_users[0].user }}'
+    create: true
+    mode:   0644
+  register: _mail_postfix_alias_root
+
+- name: 'postfix aliases | regenerate alias hashes for postfix' # noqa no-handler execute immediately
+  ansible.builtin.command: newaliases
+  when: |
+    _mail_postfix_alias_postmaster.changed or
+    _mail_postfix_alias_clamav.changed or
+    _mail_postfix_alias_blackhole.changed or
+    _mail_postfix_alias_root.changed
+  notify: 'reload postfix'

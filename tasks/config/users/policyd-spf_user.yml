@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Policy SPF User
+###############################################################################
+
+- name: 'user | create policyd-spf group'
+  ansible.builtin.group:
+    name:  'policyd-spf'
+    gid:   603
+    state: 'present'
+
+- name: 'user | create policyd-spf user'
+  ansible.builtin.user:
+    name:            'policyd-spf'
+    group:           'policyd-spf'
+    uid:             603
+    shell:           '/usr/sbin/nologin'
+    home:            '/nonexistent'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

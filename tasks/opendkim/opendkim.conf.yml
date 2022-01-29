@@ -1,0 +1,227 @@
+---
+###############################################################################
+# OpenDKIM /etc/opendkim.conf Configuration
+###############################################################################
+# OpenDKIM is an open source implementation of the DKIM (Domain Keys Identified
+# Mail) sender authentication system proposed by the E-mail Signing Technology
+# Group (ESTG) (RFC5617), now standardized by the IETF (RFC6376). It also
+# includes implementations of the Vouch By Reference (VBR, RFC5518) proposed
+# standard and the experimental Authorized Third Party Signatures protocol
+# (ATPS, RFC6541).
+#
+# Set reasonable configuration of opendkim.
+#
+# Ports:
+# * 8891/tcp dkim validation service.
+#
+# Args:
+#   mail_postfix_user: string postfix user.
+#   mail_postfix_group: string postfix group.
+#   mail_opendkim_user: string opendkim user.
+#   mail_opendkim_group: string opendkim group.
+#   __resolv_nameservers: string comma separated list of nameservers.
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * http://www.opendkim.org/
+# * https://wiki.debian.org/opendkim
+# * https://wiki.archlinux.org/title/OpenDKIM
+# * https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-dkim-with-postfix-on-debian-wheezy
+
+# Same as current default
+# log to syslog
+# Syslog yes
+
+# Same as current default
+# log successes
+# SyslogSuccess yes
+
+- name: 'dkim socket | use localhost inet connection for dkim server instead of unix socket'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*Socket'
+    line:   'Socket inet:8891@localhost'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim LogWhy | always log decision behind dkim decision to sign or verify message'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*LogWhy'
+    line:   'LogWhy yes'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim LogResults | log results based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*LogResults'
+    line:   'LogResults {% if __log_int|int < 4 %}no{% else %}yes{% endif %}'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: "dkim RemoveOldSignatures | ensure only one DKIM signature (duplicates cause '554 error duplicate header')"
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*RemoveOldSignatures'
+    line:   'RemoveOldSignatures yes'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+# Same as current default
+# umask 0007 used for socket access from postfix user in chroot
+# UMask 0007
+
+# Same as current default
+# Use relaxed, simple canonicalization
+# Canonicalization relaxed/simple
+
+# Same as current default
+# Use sign, verify operations
+# Mode sv
+
+# Same as current default
+# Do not sign for subdomains
+# SubDomains no
+
+- name: 'dkim AutoRestart | automatically restart opendkim'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*AutoRestart '
+    line:   'AutoRestart yes'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim AutoRestartRate | set maximum rate for service restarts'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*AutoRestartRate '
+    line:   'AutoRestartRate 10/1M'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim Background | run as a background process'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*Background'
+    line:   'Background yes'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim DNSTimeout | set DNS query timeout'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*DNSTimeout'
+    line:   'DNSTimeout 5'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim SignatureAlgorithm | set signing algorithm for generating signatures'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*SignatureAlgorithm'
+    line:   'SignatureAlgorithm rsa-sha256'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim OmitHeaders | remove headers not required by DKIM when signing (required signatures in list are ignored)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*OmitHeaders'
+    line:   'OmitHeaders Message-ID,Date,Return-Path,Bounces-To,Received,Comments,Keywords,Bcc,Resent-Bcc,List-ID,List-Unsubscribe,DKIM-Signature'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+# Same as current default
+# Set of header fields that should be included in all signature header lists
+# OversignHeaders From
+
+# Same as current default
+# Trust anchor enables the use of DNSSEC
+# TrustAnchorFile /usr/share/dns/root.key
+
+# postfix should be added to this group for access (above).
+- name: 'dkim UserID | run dmarc under opendkim user'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*UserID'
+    line:   'UserID opendkim:opendkim'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim KeyTable | define keytable to convert key names to (siging domain, signing selector, private key)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*KeyTable'
+    line:   'KeyTable refile:/etc/opendkim/key.table'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim SigningTable | define signing table to determine what private keys to sign messages with'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*SigningTable'
+    line:   'SigningTable refile:/etc/opendkim/signing.table'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+- name: 'dkim ExternalIgnoreList | hosts (hostname,ip,cidr) which are allowed to send mail through you for signing'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*ExternalIgnoreList'
+    line:   'ExternalIgnoreList refile:/etc/opendkim/trusted.hosts'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+# Intentionally the same list as ExternalIgnoreList; OpenDKIM will ignore this
+# list of hosts when verifying incoming mail and because it's also referenced
+# by the InternalHosts directive, this same list of hosts will be considered
+# "internal," and OpenDKIM will sign their outgoing mail.
+- name: 'dkim InternalHosts | hosts from which mail should be signed rather than verified'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*InternalHosts'
+    line:   'InternalHosts refile:/etc/opendkim/trusted.hosts'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'
+
+# Because of chroot jail, /etc/resolv.conf can't be accessed. Copy to config.
+- name: 'dkim Nameservers | set namservers for dkim from /etc/resolv.conf'
+  ansible.builtin.lineinfile:
+    path:   '/etc/opendkim.conf'
+    regexp: '^#?\s*Nameservers'
+    line:   'Nameservers {{ __resolv_nameservers }}'
+    state:  'present'
+  notify:
+    - 'restart opendkim'
+    - 'reload postfix'

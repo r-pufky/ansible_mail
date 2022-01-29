@@ -1,0 +1,79 @@
+---
+###############################################################################
+# Postfix MTA Certificates
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Certificate management for postfix. Ensure chrooted environment has latest
+# CA root certificates and use custom Diffie–Hellman parameters instead of the
+# compiled in DH parameters.
+#
+# NOTE: DH parameters are not secret; they are sent 'in the clear' to clients.
+#       We should still use our own and do not need to store them between
+#       reinstalls.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html#smtpd_tls_dh1024_param_file
+# * https://workaround.org/ispmail
+
+- name: 'postfix certificates | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '/etc/postfix/dh'
+    state: 'absent'
+  when: mail_purge_install
+
+- name: 'postfix certificates | create certificate directories'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    owner: 'root'
+    group: 'root'
+    mode:  0755
+    state: 'directory'
+  loop:
+    - '/etc/postfix/dh'
+    - '/var/spool/postfix/etc/ssl/certs'
+
+# Postfix's chroot'ed environment does not update certs from /etc/ssl/certs
+# Changes to these certificates will cause a warning message:
+#
+#   /var/spool/postfix/etc/ssl/certs/ca-certificates.crt and /etc/ssl/certs/ca-certificates.crt differ
+#
+# Copying the updated certificates to the chroot environment.
+- name: 'postfix certificates | update trusted root certificates in chroot environment'
+  ansible.builtin.copy:
+    src:   '/etc/ssl/certs/ca-certificates.crt'
+    remote_src: true
+    dest:  '/var/spool/postfix/etc/ssl/certs/ca-certificates.crt'
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+  changed_when: false
+
+# community.crypto.openssl_dhparams currrently throws error:
+#
+#   no module/action detected in task.
+#
+# Module is properly loaded (other modules work elsewhere) with example
+# documented usage. Use shell instead.
+- name: 'postfix certificates | generate dh parameters (may take a long time)'
+  ansible.builtin.command: 'openssl dhparam -out /etc/postfix/dh/{{ item }}.pem {{ item }}'
+  register: result
+  changed_when: false
+  failed_when: result.rc > 0
+  loop:
+    - 2048
+    - 1024
+    - 512
+
+- name: 'postfix certificates | set dh parameter permissions'
+  ansible.builtin.file:
+    path:  '/etc/postfix/dh/{{ item }}.pem'
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+  loop:
+    - 2048
+    - 1024
+    - 512

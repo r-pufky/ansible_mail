@@ -1,0 +1,18 @@
+---
+###############################################################################
+# Validate Configuration Options
+###############################################################################
+# Validate required options for a working mail server. Additional validation is
+# done in subroles as needed after configuration occurs.
+#
+# Confirm TXT SPF records exist and restrict to primary domain mailserver, and
+# defined MX servers for given domain.
+#
+# Args:
+#   mail_domains: list of strings, domains to host, first domain primary.
+
+- name: 'spf | check SPF records'
+  ansible.builtin.include_tasks: check_spf.yml
+  loop: '{{ mail_domains }}'
+  loop_control:
+    loop_var: domain

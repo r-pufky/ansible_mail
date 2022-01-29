@@ -1,0 +1,55 @@
+---
+###############################################################################
+# Postfix MTA Milter Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# As configuration options really means "milters to apply to smtpd, non-smtpd
+# services" and not smtpd requiring the use of mitlers; we manage milter
+# settings here even with the smtp prefix. Cross-reference smtpd.yml,
+# smtp.yml as needed.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * http://www.postfix.org/MILTER_README.html
+
+- name: 'postfix settings milter | set default action for unavailble/mis-configured milters (accept)'
+  ansible.builtin.command: 'postconf milter_default_action=accept'
+  changed_when: false
+
+- name: 'postfix settings milter | use sendmail 8 milter protocol version 6 (default for postfix 2.6+)'
+  ansible.builtin.command: 'postconf milter_protocol=6'
+  changed_when: false
+
+- name: 'postfix settings milter | use localhost inet connection for opendkim validation'
+  ansible.builtin.command: "postconf 'dkim_milter=inet:localhost:8891'"
+  changed_when: false
+
+- name: 'postfix settings milter | use localhost inet connection for opendmarc validation'
+  ansible.builtin.command: "postconf 'dmarc_milter=inet:localhost:8893'"
+  changed_when: false
+
+- name: 'postfix settings milter | set milters to apply on receiving email to smtpd (opendkim, opendmarc)'
+  ansible.builtin.command: "postconf 'smtpd_milters=$dkim_milter,$dmarc_milter'"
+  changed_when: false
+
+# DMARC will FAIL all locally submitted email
+- name: 'postfix settings milter | set milters to apply on receiving email via local delivery (opendkim)'
+  ansible.builtin.command: "postconf 'non_smtpd_milters=$dkim_milter'"
+  changed_when: false

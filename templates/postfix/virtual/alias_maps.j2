@@ -1,0 +1,23 @@
+{% for alias in mail_aliases -%}
+{{ alias.map }} {{ alias.to }}
+{% endfor %}
+
+# Per RFC 821, 2142 add abuse@, postermaster@ if not defined.
+{% if no_abuse_defined -%}
+{% for domain in mail_domains -%}
+abuse@{{ domain }} {{ mail_users[0].user }}
+{% endfor %}
+{% endif %}
+
+{% if no_postmaster_defined -%}
+{% for domain in mail_domains -%}
+postmaster@{{ domain }} {{ mail_users[0].user }}
+{% endfor %}
+{% endif %}
+
+# Define domain catchalls
+{% if no_catch_all_defined -%}
+{% for domain in mail_domains -%}
+@{{ domain }} {{ mail_users[0].user }}
+{% endfor %}
+{% endif %}

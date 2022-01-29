@@ -1,0 +1,241 @@
+---
+###############################################################################
+# Amavis
+###############################################################################
+# Amavis is an open-source content filter for electronic mail, implementing
+# mail message transfer, decoding, some processing and checking, and
+# interfacing with external content filters to provide protection against spam
+# and viruses and other malware. It can be considered an interface between a
+# mailer (MTA, Mail Transfer Agent) and one or more content filters.
+#
+# Amavis interfaces with postfix, sending mail through:
+# * clamav
+# * spamassassin
+# before sending the mail back to postfix for delivery.
+#
+# All custom settings are set in /etc/amavis/conf.d/50-user, overriding the
+# defaults set in earlier numbered config files, per debian standard.
+#
+# Ports:
+# * 10024/tcp amavis outgoing email queue (localhost-localhost)
+# * 10026/tcp amavis incoming email queue (localhost-localhost)
+#
+# Args:
+#   mail_amavis_user: string amavis user.
+#   mail_clamav_group: string clamav group.
+#   __mail_mx_fqdn: string primary domain FQDN MX record (mail.example.com).
+#   __report_recipient: string email recipient of report.
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * https://help.ubuntu.com/community/PostfixAmavisNew
+# * https://www.howtoforge.com/amavisd_postfix_debian_ubuntu
+# * https://www.fatofthelan.com/technical/how-to-install-postfix-amavis-clamav-and-spamassassin-on-debian-linux/
+
+- name: 'amavis | add avamis to clamav group'
+  ansible.builtin.user:
+    name:   '{{ mail_amavis_user }}'
+    append: true
+    groups:
+      - '{{ mail_clamav_group }}'
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | use mail FQDN MX name for amavis hostname'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$myhostname ='
+    line:   '$myhostname = "{{ __mail_mx_fqdn }}";'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | disable amavis dkim scanning (supported with opendkim/opendmarc)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$enable_dkim_verification ='
+    line:   '$enable_dkim_verification = 0;'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | enable virus checking (clamav)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^@bypass_virus_checks_maps ='
+    line:   '@bypass_virus_checks_maps = (\%bypass_virus_checks, \@bypass_virus_checks_acl, \$bypass_virus_checks_re);'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | enable spam checking (spamassassin)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^@bypass_spam_checks_maps ='
+    line:   '@bypass_spam_checks_maps = (\%bypass_spam_checks, \@bypass_spam_checks_acl, \$bypass_spam_checks_re);'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+# Amavis levels are not strictly observed and are somewhat arbitrary
+# 0: startup/exit/failure messages, viruses detected (amavis default)
+# 1: args passed from client, some more interesting messages
+# 2: virus scanner output, timing (info)
+# 3: server, client (debug)
+# 4: decompose parts
+# 5: more debug details (trace)
+- name: 'amavis | generate amavis logging map'
+  ansible.builtin.set_fact:
+    _mail_amavis_log: '{{ {"0": 2, "1": 2, "2": 2, "3": 2, "4": 3, "5": 5} }}'
+
+- name: 'amavis | always log at least spam test scores (log level 2)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$log_level ='
+    line:   '$log_level = {{ _mail_amavis_log[__log_int] }};'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | use minimum spam threshold of 3.0'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$sa_tag_level_deflt ='
+    line:   '$sa_tag_level_deflt = 3.0;'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state: 'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | bounce identified spam immediately (final spam)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$final_spam_destiny ='
+    line:   '$final_spam_destiny = D_BOUNCE;'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | bounce identified spam immediately (bad headers)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$final_bad_header_destiny ='
+    line:   '$final_bad_header_destiny = D_BOUNCE;'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | always ensure suppported domains are filtered with spamassassin'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^@local_domains_maps ='
+    line:   '@local_domains_maps = (read_hash("/etc/postfix/virtual/mailbox_domains"));'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: "amavis | don't add recieved header for amavis (only add clamav, spamassasin, etc)"
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$allowed_added_header_fields{lc("Received")} ='
+    line:   '$allowed_added_header_fields{lc("Received")} = 0;'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | write virus scanned header, but not what scanner was used'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$X_HEADER_LINE ='
+    line:   '$X_HEADER_LINE = "Yes";'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | use separate services for incoming/outgoing email queues'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$inet_socket_port ='
+    line:   '$inet_socket_port = [10024,10026];'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | use port 10026 for incoming email queue'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$interface_policy{"10026"} ='
+    line:   '$interface_policy{"10026"} = "ORIGINATING";'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | set max processes to the number of cores ({{ ansible_processor_nproc }})'
+  ansible.builtin.lineinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    regexp: '^\$max_servers ='
+    line:   '$max_servers = {{ ansible_processor_nproc }};'
+    create: true
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | configure policy for handling originating emails'
+  ansible.builtin.blockinfile:
+    path:   '/etc/amavis/conf.d/50-user'
+    insertbefore: '^#-* Do not modify'
+    mode:   0644
+    marker: '# ----- {mark} amavis originating email processing -----'
+    block: |
+      $policy_bank{'ORIGINATING'} = { # mail supposedly originating from our users
+        originating => 1,             # declare mail submitted by our smtp client
+        allow_disclaimers => 1,       # enable disclaimer insertion if available
+
+        # notify administrator of locally originating malware
+        virus_admin_maps => ["virusalert\@$mydomain"],
+        spam_admin_maps  => ["virusalert\@$mydomain"],
+        warnbadhsender   => 1,
+
+        # force MTA conversion to 7-bit (e.g. before DKIM signing)
+        smtpd_discard_ehlo_keywords => ['8BITMIME'],
+        bypass_banned_checks_maps => [1],     # allow sending any file names/types
+        terminate_dsn_on_notify_success => 0, # don't remove NOTIFY=SUCCESS option
+      };
+    state:  'present'
+  notify: 'restart amavis'
+
+- name: 'amavis | removed detected virus emails every {{ mail_virus_purge }} days'
+  ansible.builtin.cron:
+    name:      'detected email virus removal job'
+    minute:    '0'
+    hour:      '4'
+    user:      'root'
+    job:       '/usr/bin/find /var/lib/amavis/virusmails/ -type f -mtime +"{{ mail_virus_purge }}" -delete'
+    cron_file: 'amavis_virus_removal'
+    state:     '{% if mail_virus_purge > 0 %}present{% else %}absent{% endif %}'

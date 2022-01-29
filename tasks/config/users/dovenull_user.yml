@@ -1,0 +1,26 @@
+---
+###############################################################################
+# Dovecot User
+###############################################################################
+
+- name: 'user | create dovenull group'
+  ansible.builtin.group:
+    name:  'dovenull'
+    gid:   605
+    state: 'present'
+
+- name: 'user | create dovenull user'
+  ansible.builtin.user:
+    name:            'dovenull'
+    group:           'dovenull'
+    uid:             605
+    shell:           '/usr/sbin/nologin'
+    home:            '/nonexistent'
+    comment:         'Dovecot login user,,,'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

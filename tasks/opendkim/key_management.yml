@@ -1,0 +1,118 @@
+---
+###############################################################################
+# OpenDKIM /etc/opendkim/keys Configuration
+###############################################################################
+# OpenDKIM is an open source implementation of the DKIM (Domain Keys Identified
+# Mail) sender authentication system proposed by the E-mail Signing Technology
+# Group (ESTG) (RFC5617), now standardized by the IETF (RFC6376). It also
+# includes implementations of the Vouch By Reference (VBR, RFC5518) proposed
+# standard and the experimental Authorized Third Party Signatures protocol
+# (ATPS, RFC6541).
+#
+# Auto generate domain keypair data if it does not exist, using standard setup.
+#
+# Keys are stored in: /etc/opendkim/keys/{DOMAIN}/{SELECTOR}.{txt,private}
+#
+# Args:
+#   mail_purge_install: boolean true if pre-existing configs should be removed.
+#   mail_opendkim_user: string opendkim user.
+#   mail_opendkim_group: string opendkim group.
+#   __trusted_networks: list of networks (hostnames, ip, cidr) localhost ok.
+#   mail_dkim_domains: list of dicts containing dkim domains to setup DKIM.
+#       {
+#         domain: 'example.com',
+#         selector: 'mail',
+#         private: '{OPTIONAL private dkim key},
+#         public: '{OPTIONAL public dkim key}'
+#       }
+#
+# Reference:
+# * http://www.opendkim.org/
+# * https://wiki.debian.org/opendkim
+# * https://wiki.archlinux.org/title/OpenDKIM
+# * https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-dkim-with-postfix-on-debian-wheezy
+
+- name: 'dkim config | generating dkim configuration data'
+  ansible.builtin.set_fact:
+    _mail_dkim_signing_table: |
+      {% for dkim in mail_dkim_domains -%}
+        *@{{ dkim.domain }} {% if "selector" not in dkim %}mail{% else %}{{ dkim.selector }}{% endif %}._domainkey.{{ dkim.domain }}
+      {% endfor %}
+    _mail_dkim_key_table: |
+       {% for dkim in mail_dkim_domains -%}
+         {% if "selector" not in dkim %}mail{% else %}{{ dkim.selector }}{% endif %}._domainkey.{{ dkim.domain }} {{ dkim.domain }}:{% if "selector" not in dkim %}mail{% else %}{{ dkim.selector }}{% endif %}:/etc/opendkim/keys/{{ dkim.domain }}/{% if "selector" not in dkim %}mail{% else %}{{ dkim.selector }}{% endif %}.private
+       {% endfor %}
+
+- name: 'dkim config | detected settings'
+  ansible.builtin.debug:
+    msg: |
+      signing.table
+      -------------
+      {{ _mail_dkim_signing_table }}
+      key.table
+      ---------
+      {{ _mail_dkim_key_table }}
+
+- name: 'dkim | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    state: 'absent'
+  loop:
+    - '/etc/opendkim/keys/'
+    - '/etc/opendkim/signing.table'
+    - '/etc/opendkim/key.table'
+    - '/etc/opendkim/trusted.hosts'
+  when: mail_purge_install
+
+- name: 'dkim | create keys directory'
+  ansible.builtin.file:
+    path:    '/etc/opendkim/keys'
+    owner:   '{{ mail_opendkim_user }}'
+    group:   '{{ mail_opendkim_group }}'
+    mode:    0700
+    state:   'directory'
+    recurse: true
+  changed_when: false
+
+# We have to use a template here, as copy with content variable set renders
+# escaped newlines (e.g. rendered as '\n' and not the control character). This
+# prevents opendkim from starting.
+- name: 'dkim | define trusted hosts/networks'
+  ansible.builtin.template:
+    src:   'opendkim/trusted.hosts.j2'
+    dest:  '/etc/opendkim/trusted.hosts'
+    owner: '{{ mail_opendkim_user }}'
+    group: '{{ mail_opendkim_group }}'
+    mode:  0400
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+
+- name: 'dkim | define signing table'
+  ansible.builtin.copy:
+    dest:    '/etc/opendkim/signing.table'
+    owner:   '{{ mail_opendkim_user }}'
+    group:   '{{ mail_opendkim_group }}'
+    mode:    0400
+    content: '{{ _mail_dkim_signing_table }}'
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+
+- name: 'dkim | define key table'
+  ansible.builtin.copy:
+    dest:    '/etc/opendkim/key.table'
+    owner:   '{{ mail_opendkim_user }}'
+    group:   '{{ mail_opendkim_group }}'
+    mode:    0400
+    content: '{{ _mail_dkim_key_table }}'
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+
+- name: 'dkim | generate and/or check private domain keys'
+  ansible.builtin.include_tasks: create_key.yml
+  loop: '{{ mail_dkim_domains }}'
+  loop_control:
+    loop_var: domain
+  no_log: true # may contain private key material

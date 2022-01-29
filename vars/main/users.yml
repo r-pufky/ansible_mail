@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Mail Services User Keys
+###############################################################################
+# Manual mapping service names for flat user variables defined in defaults.
+#
+# These are the VARIABLE names between mail_ and _{user,group}; NOT the actual
+# VALUES.
+#
+# NOTE: Manually keep this mapping up to date with service users defined in the
+# defaults/main/users.yml file.
+
+mail_service_users:
+  - 'postfix'
+  - 'postsrsd'
+  - 'clamav'
+  - 'opendkim'
+  - 'policyd_spf'  # lowered from policyd-spf
+  - 'dovecot'
+  - 'dovenull'
+  - 'postgrey'
+  - 'opendmarc'
+  - 'debian_spamd' # lowered from debian-spamd
+  - 'amavis'
+  - 'vmail'

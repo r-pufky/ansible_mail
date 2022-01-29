@@ -1,0 +1,26 @@
+---
+###############################################################################
+# Spamassassin /etc/default/spamassassin Configuration
+###############################################################################
+# Spamassassin uses a robust scoring framework and plug-ins to integrate a wide
+# range of advanced heuristic and statistical analysis tests on email headers
+# and body text including text analysis, Bayesian filtering, DNS blocklists,
+# and collaborative filtering databases.
+#
+# Spamassassin is NOT run as a independent service, but called via amavis. This
+# does not require spamc/spamd to run.
+#
+# Reference:
+# * https://spamassassin.apache.org
+# * https://www.binarytides.com/install-spamassassin-with-postfix-dovecot/
+# * https://www.linuxbabe.com/mail-server/block-email-spam-check-header-body-with-postfix-spamassassin
+# * https://www.fatofthelan.com/technical/how-to-install-postfix-amavis-clamav-and-spamassassin-on-debian-linux/
+
+- name: 'spamassassin | automatically update spamassassin rules nightly'
+  ansible.builtin.lineinfile:
+    path:   '/etc/default/spamassassin'
+    regexp: '^CRON='
+    line:   'CRON=1'
+    create: true
+    mode:   0644
+    state:  'present'

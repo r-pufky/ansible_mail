@@ -1,0 +1,59 @@
+---
+###############################################################################
+# Postfix MTA Postscreen Whitelisting (helo, rbl, postscreen)
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Create basic whitelist mechanicanisms for future use. Only whitelist the
+# mail server IP
+#
+# Postscreen lists created by postwhite (postscreen_spf_*) are managed in
+# postwhite.yml. They cannot be moved.
+#
+# Args:
+#   __private_ip: string private network ip (not localhost).
+#
+# Reference:
+# * http://www.postfix.org/
+# * https://workaround.org/ispmail
+
+- name: 'postscreen | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '/etc/postfix/postscreen'
+    state: 'absent'
+  when: mail_purge_install
+
+- name: 'postscreen | configure helo whitelist (no rules defined)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/postscreen/helo_whitelist'
+    line:   '# Disabled: delivery is accepted and validated against spam tools for rejection.'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+  notify: 'update postscreen helo whitelist'
+
+- name: 'postscreen | configure remote blocklist (rbl) custom domain whitelist (no rules defined)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/postscreen/rbl_whitelist'
+    line:   '# Disabled: delivery is accepted and validated against spam tools for rejection.'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+  notify: 'update postscreen rbl whitelist'
+
+- name: 'postscreen | configure custom whitelist for postscreen (email server)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postfix/postscreen/custom_whitelist'
+    regexp: '^{{ __private_ip }} '
+    line:   '{{ __private_ip }} permit'
+    owner:  'root'
+    group:  'root'
+    mode:   0644
+    create: true
+    state:  'present'
+  notify: 'update postscreen custom whitelist'

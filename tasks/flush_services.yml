@@ -1,0 +1,43 @@
+---
+###############################################################################
+# Flush Services
+###############################################################################
+# Flush queued service restarts before validating installation. Flush handlers
+# cannot be run in conditionls. These would normally be flushed at the end of
+# the role anyways. Run before validation.
+#
+# If this is the first installation, restart **all** services.
+#
+# Args:
+#   __first_run: boolean true if this is the first time the role has been run
+#       on the system.
+
+- name: 'flush handlers | run all handlers for validation prep'
+  ansible.builtin.meta: flush_handlers
+
+# First run, force reload all services
+- name: 'reload systemd' # noqa no-handler execute immediately
+  ansible.builtin.systemd:
+    daemon-reload: true
+  when: __first_run
+
+- name: 'flush handlers | first run detected, restart all services' # noqa no-handler execute immediately
+  ansible.builtin.systemd:
+    name:  '{{ item }}'
+    state: 'restarted'
+  when: __first_run
+  loop:
+    - 'amavis'
+    - 'clamav-daemon'
+    - 'clamav-freshclam'
+    - 'opendkim'
+    - 'opendmarc'
+    - 'postgrey'
+    - 'postsrsd'
+    - 'dovecot'
+    - 'postfix'
+
+- name: 'flush handlers | mark mail.log that services are now live'
+  ansible.builtin.command: 'logger -p mail.info -t ansible ██████████▶ Mail Services Restart Complete ◀██████████'
+  changed_when: false
+  failed_when: false

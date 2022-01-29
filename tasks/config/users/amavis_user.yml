@@ -1,0 +1,43 @@
+---
+###############################################################################
+# Amavis User
+###############################################################################
+# Amavis/Clamav users need to be added to the each others' group; use append
+# during account creation to prevent group removal and OOO errors.
+#
+# No privileges.
+
+- name: 'user | create amavis group'
+  ansible.builtin.group:
+    name:  'amavis'
+    gid:   609
+    state: 'present'
+
+- name: 'user | create amavis user'
+  ansible.builtin.user:
+    name:            'amavis'
+    append:          true
+    group:           'amavis'
+    groups:
+      - 'amavis'
+    uid:             609
+    shell:           '/bin/sh'
+    home:            '/var/lib/amavis'
+    comment:         'AMaViS system user,,,'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'
+
+# Amavis package will fail install if the user exists without home; manually
+# create home to prevent default skeletons file setup.
+- name: 'user | set amavis home'
+  ansible.builtin.file:
+    path:  '/var/lib/amavis'
+    owner: 'amavis'
+    group: 'amavis'
+    mode:  0770
+    state: 'directory'

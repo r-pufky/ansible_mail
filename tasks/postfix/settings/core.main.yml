@@ -1,0 +1,151 @@
+---
+###############################################################################
+# Postfix MTA Core Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manage individual postfix settings.
+#
+# Args:
+#   __mail_mx_fqdn: string FQDN MX mail name (mail.example.com).
+#   __trusted_networks: list of trusted networks, localhosts first. May be ip,
+#       cidr,hostname,wildcard addresses.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * https://workaround.org/ispmail
+# * https://access.redhat.com/articles/1468593
+# * https://rudd-o.com/linux-and-free-software/setting-up-a-mail-server-using-postfix-in-5-minutes
+# * https://www.linuxbabe.com/mail-server/block-email-spam-postfix
+
+- name: 'postfix settings core | disable local new mail notifications'
+  ansible.builtin.command: 'postconf biff=no'
+  changed_when: false
+
+- name: 'postfix settings core | disable readme directory and location (privacy)'
+  ansible.builtin.command: 'postconf readme_directory=no'
+  changed_when: false
+
+- name: "postfix settings core | require full domain in email address (appending .domain is MUA's job)"
+  ansible.builtin.command: 'postconf append_dot_mydomain=no'
+  changed_when: false
+
+# Default NIS (network information systems) lookups are set (nis:mail.aliases)
+# which share configurations between mail servers. This causes the following
+# warning when not used:
+#
+#   warning: dict_nis_init: NIS domain name not set - NIS lookups disabled
+#
+# Explicitly remove NIS configuration to prevent this warning.
+- name: 'postfix settings core | explicitly set alias maps to aliases used for local delivery'
+  ansible.builtin.command: "postconf 'alias_maps=hash:/etc/aliases'"
+  changed_when: false
+
+- name: 'postfix settings core | explicitly set alias database used for local delivery'
+  ansible.builtin.command: "postconf 'alias_database=hash:/etc/aliases'"
+  changed_when: false
+
+# Virtual domains should not exist in local mail config, it breaks postfix.
+# Using: $myhostname,localhost.$mydomain,localhost will trigger the warning:
+#
+#   do not list domain in BOTH mydestination and virtual_mailbox_domains
+#
+# Configure mydestination for local mail delivery only; everything else is
+# supported in virtual domains.
+- name: 'postfix settings core | specify mail delivery for domains delivered via local transport (not virtual domains)'
+  ansible.builtin.command: "postconf 'mydestination={{ ansible_hostname }},{{ ansible_hostname }}.localdomain,localhost,localhost.localdomain'"
+  changed_when: false
+
+- name: 'postfix settings core | set trusted networks (ip/cidr only)'
+  ansible.builtin.command: postconf 'mynetworks={{ __trusted_networks|ansible.netcommon.ipaddr|join(", ") }}'
+  changed_when: false
+
+- name: 'postfix settings core | disable email relay'
+  ansible.builtin.command: 'postconf relayhost='
+  changed_when: false
+
+- name: 'postfix settings core | use all available network interfaces'
+  ansible.builtin.command: 'postconf inet_interfaces=all'
+  changed_when: false
+
+# Network interface changes require a restart (see manual trigger below)
+- name: 'postfix settings core | use IPv4 only'
+  ansible.builtin.command: 'postconf inet_protocols=ipv4'
+  changed_when: false
+
+- name: 'postfix settings core | set recipient delimeter to +'
+  ansible.builtin.command: 'postconf recipient_delimiter=+'
+  changed_when: false
+
+# http://www.postfix.org/COMPATIBILITY_README.html
+- name: 'postfix settings core | set compatibility level 2'
+  ansible.builtin.command: 'postconf compatibility_level=2'
+  changed_when: false
+
+- name: 'postfix settings core | set local sender email origin domain from /etc/mailname'
+  ansible.builtin.command: 'postconf myorigin=/etc/mailname'
+  changed_when: false
+
+- name: 'postfix settings core | default maildir location is Maildir/'
+  ansible.builtin.command: 'postconf home_mailbox=Maildir/'
+  changed_when: false
+
+- name: 'postfix settings core | use dovecot to deliver incoming local email'
+  ansible.builtin.command: 'postconf mailbox_transport=lmtp:unix:private/dovecot-lmtp'
+  changed_when: false
+
+- name: 'postfix settings core | no size limits on user mailboxes'
+  ansible.builtin.command: 'postconf mailbox_size_limit=0'
+  changed_when: false
+
+- name: 'postfix settings core | set maximum message size to 25MB (same as gmail)'
+  ansible.builtin.command: 'postconf message_size_limit=26214400'
+  changed_when: false
+
+# The internet hostname of this mail system. The default is to use the (FQDN)
+# from gethostname(), or to use the non-FQDN result from gethostname() and
+# append ".$mydomain". $myhostname is used as a default value for many other
+# configuration parameters.
+#
+# myhostname = host.example.com
+#
+# The internet domain name of this mail system. The default is to use
+# $myhostname minus the first component, or "localdomain" (Postfix 2.3 and
+# later). $mydomain is used as a default value for many other configuration
+# parameters.
+#
+# mydomain = domain.tld
+#
+# Use the mail FQDN MX record for myhostname; allowing any machine to run mail
+# for domains.
+- name: 'postfix settings core | set server hostname to FQDN MX name {{ __mail_mx_fqdn }}'
+  ansible.builtin.command: 'postconf myhostname={{ __mail_mx_fqdn }}'
+  changed_when: false
+
+- name: 'postfix settings core | prevent harvesting of email addresses (disable SMTP VFRY)'
+  ansible.builtin.command: 'postconf disable_vrfy_command=yes'
+  changed_when: false
+
+- name: 'postfix settings core | disable smtp UTF8 support (dovecot does not support smtp UTF8 extensions)'
+  ansible.builtin.command: 'postconf smtputf8_enable=no'
+  changed_when: false
+
+- name: 'postfix settings core | set maximum time for SPF validation results'
+  ansible.builtin.command: 'postconf policyd-spf_time_limit=3600'
+  changed_when: false

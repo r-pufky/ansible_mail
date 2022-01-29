@@ -1,0 +1,67 @@
+---
+###############################################################################
+# Razor
+###############################################################################
+# Vipul's Razor is a distributed, collaborative, spam detection and filtering
+# network. Through user contribution, Razor establishes a distributed and
+# constantly updating catalogue of spam in propagation that is consulted by
+# email clients to filter out known spam. Detection is done with statistical
+# and randomized signatures that efficiently spot mutating spam content. User
+# input is validated through reputation assignments based on consensus on
+# report and revoke assertions which in turn is used for computing confidence
+# values associated with individual signatures.
+#
+# Razor configuration is validated after all services are restarted in
+# validate_mail.yml.
+#
+# Args:
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * http://razor.sourceforge.net/
+# * https://kura.gg/2011/09/22/spamassassin-razor-pyzor/
+# * https://www.binarytides.com/install-spamassassin-with-postfix-dovecot/
+
+- name: 'razor | check config'
+  ansible.builtin.stat:
+    path: '/etc/razor/razor-agent.conf'
+  register: _mail_razor_config
+
+- name: 'razor | check existing identity'
+  ansible.builtin.stat:
+    path: '/etc/razor/identity'
+  register: _mail_razor_identity
+
+- name: 'razor | create default config'
+  ansible.builtin.command: 'razor-admin -create -home=/etc/razor'
+  when: not _mail_razor_config.stat.exists
+
+- name: 'razor | set home directory'
+  ansible.builtin.lineinfile:
+    path:   '/etc/razor/razor-agent.conf'
+    regexp: '^razorhome'
+    line:   'razorhome              = /etc/razor'
+    state:  'present'
+
+# Razor levels range from 0 to 20; anything beyond 15 is for developers only.
+# 1: startup/error messages (critical)
+# 5: every transaction with the server (razor default: info)
+# 14: extremely verbose logging for debugging (debug)
+- name: 'razor | generate razor logging map'
+  ansible.builtin.set_fact:
+    _mail_razor_log: '{{ {"0": 1, "1": 1, "2": 1, "3": 5, "4": 14, "5": 14} }}'
+
+- name: 'razor | set logging based on requested level '
+  ansible.builtin.lineinfile:
+    path:   '/etc/razor/razor-agent.conf'
+    regexp: '^debuglevel'
+    line:   'debuglevel             = {{ _mail_razor_log[__log_int] }}'
+    state:  'present'
+
+- name: 'razor | create new random identity'
+  ansible.builtin.command: 'razor-admin -register -home=/etc/razor'
+  when: not _mail_razor_identity.stat.exists
+
+- name: 'razor | discover servers'
+  ansible.builtin.command: 'razor-admin -discover -home=/etc/razor'
+  when: not _mail_razor_identity.stat.exists

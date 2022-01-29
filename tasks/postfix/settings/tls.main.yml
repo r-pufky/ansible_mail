@@ -1,0 +1,46 @@
+---
+###############################################################################
+# Postfix MTA TLS Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manages tls_ settings.
+#
+# Args:
+#   __tls_high_cipherlist: string colon (:) separated list of ciphers to use
+#       for postfix TLS and dovecot TLS.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * http://www.postfix.org/postconf.5.html#tls_high_cipherlist
+# * https://workaround.org/ispmail
+# * https://access.redhat.com/articles/1468593
+# * https://maulwuff.de/research/ssl-debugging.html#hdr3.2
+
+- name: 'postfix settings tls | disable compression, renegotitation for SSL connections (reduces CPU usage)'
+  ansible.builtin.command: 'postconf tls_ssl_options=NO_COMPRESSION,NO_RENEGOTIATION'
+  changed_when: false
+
+- name: 'postfix settings tls | disable compression, renegotitation for SSL connections (reduces CPU usage)'
+  ansible.builtin.command: 'postconf tls_high_cipherlist={{ __tls_high_cipherlist }}'
+  changed_when: false
+
+- name: 'postfix settings tls | use mail server settings for cipher preference instead of clients'
+  ansible.builtin.command: 'postconf tls_preempt_cipherlist=yes'
+  changed_when: false

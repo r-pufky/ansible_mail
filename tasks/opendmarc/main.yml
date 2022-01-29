@@ -1,0 +1,5 @@
+---
+- ansible.builtin.include_tasks: local.opendmarc.yml
+- ansible.builtin.include_tasks: opendmarc.conf.yml
+- ansible.builtin.include_tasks: validate_dmarc.yml
+  when: __mail_validation_checks

@@ -1,0 +1,31 @@
+---
+###############################################################################
+# Postfix MTA Amavis Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manage amavis specific settings. Cross-reference smtpd.yml for throttling.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+
+# See: smtpd.yml
+- name: 'postfix settings amavis | send all unauthenticated messages to amavis for additional filtering'
+  ansible.builtin.command: 'postconf content_filter=smtp-amavis:[127.0.0.1]:10024'
+  changed_when: false

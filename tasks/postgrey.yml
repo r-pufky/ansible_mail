@@ -1,0 +1,40 @@
+---
+###############################################################################
+# Postgrey
+###############################################################################
+# Postgrey is a Postfix policy server implementing greylisting.
+#
+# When a request for delivery of a mail is received by Postfix via SMTP, the
+# triplet CLIENT_IP / SENDER / RECIPIENT is built. If it is the first time that
+# this triplet is seen, or if the triplet was first seen, less than 5 minutes
+# ago, then the mail gets rejected with a temporary error. Hopefully spammers
+# or viruses will not try again later, as it is however required per RFC.
+#
+# Recipients that should alway bypass greylisting: postmaster@, abuse@ (kept to
+# required domain emails, per RFC: 821, 2142; required for high domain
+# reputation). Added by default to /etc/postgrey/whitelist_recipients.
+#
+# Ports:
+# * 10023/tcp for postgrey check (localhost-localhost)
+#
+# Args:
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * https://postgrey.schweikert.ch/
+
+- name: 'postgrey postgrey_opts | delay for 300 seconds, delete entries older than 35 days, do not auto whitelist clients'
+  ansible.builtin.lineinfile:
+    path:   '/etc/default/postgrey'
+    regexp: '^#?\s*POSTGREY_OPTS='
+    line:   'POSTGREY_OPTS="--inet=127.0.0.1:10023 {% if __log_int|int > 3 %}--verbose{% endif %} --delay=300 --max-age=35 --auto-whitelist-clients=0"'
+    state:  'present'
+  notify: 'restart postgrey'
+
+- name: 'postgrey | use a custom delayed message'
+  ansible.builtin.lineinfile:
+    path:   '/etc/default/postgrey'
+    regexp: '^#?\s*POSTGREY_TEXT='
+    line:   'POSTGREY_TEXT="Delayed by postgrey"'
+    state:  'present'
+  notify: 'restart postgrey'

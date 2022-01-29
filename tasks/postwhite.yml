@@ -1,0 +1,140 @@
+---
+###############################################################################
+# Postwhite
+###############################################################################
+# Postwhite uses the published SPF records from domains of known webmailers,
+# social networks, ecommerce providers, and compliant bulk senders to generate
+# a list of outbound mailer IP addresses and CIDR ranges to create a whitelist
+# (and optionally a blacklist) for Postfix's Postscreen.
+#
+# This allows Postscreen to save time and resources by immediately handing off
+# whitelisted connections from these hosts (which we can somewhat safely
+# presume are properly configured) to Postfix's smtpd process for further
+# action. Blacklisted hosts are rejected before they reach Postfix's smtpd
+# process.
+#
+# NOTE: This does not whitelist (or blacklist) email messages from any of these
+# hosts. A whitelist for Postscreen (which is merely the first line of
+# Postfix's defense) merely allows listed hosts to connect to Postfix without
+# further tests to prove they are properly configured and/or legitimate
+# senders. A Postscreen blacklist does nothing but reject the connection based
+# on the blacklisted host's IP.
+#
+# If all of the whitelist mailers are selected when Postwhite runs, the
+# resulting whitelist includes over 500 outbound mail servers, all of which
+# have a very high probability of being properly configured.
+#
+# git packages are pre-installed from install/git.yml
+#
+# Args:
+#   mail_purge_install: boolean true if pre-existing configs should be removed.
+#
+# Reference:
+# * https://github.com/stevejenkins/postwhite
+# * https://github.com/spf-tools
+
+- name: 'postwhite | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    state: 'absent'
+  failed_when: false # blacklist is currently not created
+  loop:
+    - '/etc/postfix/postscreen_spf_whitelist'
+    - '/etc/postfix/postscreen_spf_blacklist'
+    - '/etc/yahoo_static_hosts.txt'
+    - '/etc/postwhite.conf'
+  when: mail_purge_install
+
+- name: 'postwhite | check for existing config'
+  ansible.builtin.stat:
+    path: '/etc/postwhite.conf'
+  register: _mail_postwhite_config
+
+- name: 'postwhite | copy template config to etc'
+  ansible.builtin.copy:
+    src:   '/var/lib/postwhite/postwhite.conf'
+    dest:  '/etc/postwhite.conf'
+    remote_src: true
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+  when: not _mail_postwhite_config.stat.exists
+
+- name: 'postwhite spftoolspath | use off bin paths (non-default) spf-tools'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postwhite.conf'
+    regexp: '^#?\s*spftoolspath='
+    line:   'spftoolspath=/var/lib/spf-tools'
+    state:  'present'
+
+# postwhite always pre-pends /etc/postfix
+- name: 'postwhite whitelist | write whitelist to postfix directory'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postwhite.conf'
+    regexp: '^#?\s*whitelist='
+    line:   'whitelist=postscreen_spf_whitelist'
+    state:  'present'
+
+# postwhite always pre-pends /etc/postfix
+- name: 'postwhite blacklist | write blacklist to postfix directory'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postwhite.conf'
+    regexp: '^#?\s*blacklist='
+    line:   'blacklist=postscreen_spf_blacklist'
+    state:  'present'
+
+- name: 'postwhite yahoo_static_hosts | write yahoo static hosts to etc'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postwhite.conf'
+    regexp: '^#?\s*yahoo_static_hosts='
+    line:   'yahoo_static_hosts=/etc/yahoo_static_hosts.txt'
+    state:  'present'
+
+- name: 'postwhite include_yahoo | include yahoo in postwhite updates'
+  ansible.builtin.lineinfile:
+    path:   '/etc/postwhite.conf'
+    regexp: '^#?\s*include_yahoo='
+    line:   'include_yahoo=yes'
+    state:  'present'
+
+- name: 'postwhite | check for existing whitelist'
+  ansible.builtin.stat:
+    path: '/etc/postfix/postscreen_spf_whitelist'
+  register: _mail_postwhite_whitelist
+
+- name: 'postwhite | touch yahoo static hosts if non-existant'
+  ansible.builtin.file:
+    dest:  '/etc/yahoo_static_hosts.txt'
+    force: false
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+    modification_time: preserve
+    state: 'touch'
+  changed_when: false
+
+# postwhite will automatically reload postfix
+- name: 'postwhite | trigger postwhite run (may take a few minutes)' # noqa no-handler execute immediately
+  ansible.builtin.command: '/var/lib/postwhite/postwhite'
+  when: |
+    not _mail_postwhite_whitelist.stat.exists or
+    _mail_install_git_spf_tools.changed or
+    _mail_install_git_postwhite.changed
+
+- name: 'postwhite | update whitelist daily'
+  ansible.builtin.cron:
+    name:         'postwhite daily whitelist updates'
+    special_time: 'daily'
+    user:         'root'
+    job:          '/var/lib/postwhite/postwhite > /dev/null 2>&1'
+    cron_file:    'postwhite_daily_whitelist_updates'
+    state:        'present'
+
+- name: 'postwhite | update yahoo ips weekly'
+  ansible.builtin.cron:
+    name:         'postwhite weekly yahoo IP updates'
+    special_time: 'weekly'
+    user:         'root'
+    job:          '/var/lib/postwhite/scrape_yahoo > /dev/null 2>&1'
+    cron_file:    'postwhite_weekly_yahoo_ip_update'
+    state:        'present'

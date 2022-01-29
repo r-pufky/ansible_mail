@@ -1,0 +1,52 @@
+---
+###############################################################################
+# Dovecot Sieve Configuration
+###############################################################################
+# Dovecot is an open source IMAP and POP3 email server for Linux/UNIX-like
+# systems, written with security primarily in mind. Dovecot is an excellent
+# choice for both small and large installations. It’s fast, simple to set up,
+# requires no special administration and it uses very little memory.
+#
+# Sieve allows additional filtering and maill processing for user inboxes.
+#
+# Reference:
+# * https://www.dovecot.org/
+# * https://doc.dovecot.org/settings/
+# * https://workaround.org/ispmail
+
+- name: 'dovecot sieve | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    state: 'absent'
+  loop:
+    - '/usr/lib/dovecot/sieve-pipe'
+    - '/usr/lib/dovecot/sieve-filter'
+    - '/usr/lib/dovecot/sieve-global'
+  when: mail_purge_install
+
+- name: 'dovecot seieve | create global sieve directories'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    owner: 'root'
+    group: 'root'
+    mode:  0755
+    state: 'directory'
+  loop:
+    - '/usr/lib/dovecot/sieve-pipe'
+    - '/usr/lib/dovecot/sieve-filter'
+    - '/usr/lib/dovecot/sieve-global/after'
+    - '/usr/lib/dovecot/sieve-global/before'
+
+- name: 'dovecot sieve | globally filter detected spam to junk mail folder'
+  ansible.builtin.copy:
+    dest:  '/usr/lib/dovecot/sieve-global/before/40-spam-to-junk.sieve'
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+    content: |
+      require "fileinto";
+
+      if header :contains "X-Spam-Flag" "YES" {
+        fileinto "Junk";
+      }
+  notify: 'update sieve'

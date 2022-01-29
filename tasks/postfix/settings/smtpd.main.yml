@@ -1,0 +1,194 @@
+---
+###############################################################################
+# Postfix MTA SMTPD Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manage smtpd_ settings. Cross-reference sasl.yml, milter.yml, amavis.yml for
+# sasl, milter, amavis configuration.
+#
+# Args:
+#   __log_int: integer translation of user requested logging level (using map).
+#   __fullchain_pem: string location of fullchain.pem certificate.
+#   __privkey_pem: string location of privkey.pem certificate.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * http://www.postfix.org/postconf.5.html#smtpd_recipient_restrictions
+# * https://workaround.org/ispmail
+# * https://datatracker.ietf.org/doc/html/rfc4954
+# * https://access.redhat.com/articles/1468593
+# * https://rudd-o.com/linux-and-free-software/setting-up-a-mail-server-using-postfix-in-5-minutes
+# * https://www.saotn.org/test-smtp-authentication-starttls/
+
+- name: 'postfix settings smtpd | reduce smtpd banner to required information only (privacy)'
+  ansible.builtin.command: "postconf 'smtpd_banner=$myhostname ESMTP'"
+  changed_when: false
+
+- name: 'postfix settings smtpd | set certificates to use for TLS encryption'
+  ansible.builtin.command: 'postconf smtpd_tls_chain_files={{ __privkey_pem }},{{ __fullchain_pem }}'
+  changed_when: false
+
+- name: 'postfix settings smtpd | only use high grade ciphers with mandatory TLS encryption'
+  ansible.builtin.command: 'postconf smtpd_tls_mandatory_ciphers=high'
+  changed_when: false
+
+- name: 'postfix settings smtpd | disable weak ciphers for all TLS security levels'
+  ansible.builtin.command: 'postconf smtpd_tls_exclude_ciphers=aNULL,LOW,EXP,MEDIUM,ADH,AECDH,MD5,DSS,ECDSA,CAMELLIA128,3DES,CAMELLIA256,RSA+AES,eNULL'
+  changed_when: false
+
+- name: 'postfix settings smtpd | use custom 1024 bit DH parameters'
+  ansible.builtin.command: 'postconf smtpd_tls_dh1024_param_file=/etc/postfix/dh/1024.pem'
+  changed_when: false
+
+- name: 'postfix settings smtpd | set path for TLS CA certificates (chroot environment)'
+  ansible.builtin.command: 'postconf smtpd_tls_CApath=/etc/ssl/certs'
+  changed_when: false
+
+# https://datatracker.ietf.org/doc/html/rfc2487
+#   A publicly-referenced SMTP server MUST NOT require use of the STARTTLS
+#   extension in order to deliver mail locally. This rule prevents the STARTTLS
+#   extension from damaging the interoperability of the Internet's SMTP
+#   infrastructure. A publicly-referenced SMTP server is an SMTP server which
+#   runs on port 25 of an Internet host listed in the MX record (or A record if
+#   an MX record is not present) for the domain name on the right hand side of
+#   an Internet mail address.
+- name: "postfix settings smtpd | use opportunistic TLS per RFC 2487 (announce STARTTLS, but don't require clients use it)"
+  ansible.builtin.command: 'postconf smtpd_tls_security_level=may'
+  changed_when: false
+
+# smtpd tls log range 0 to 4. keep < 2 unless problems. 4 strongly discouraged.
+# 0: Disable logging of TLS activity (postfix default)
+# 1: Summary message on TLS handshake completion, no client certificate
+#    trust-chain errors if verification not required. (info)
+# 2: Log TLS negotiation. (debug)
+# 3: Log hexadecimal and ASCII dump of TLS negotiation process.
+# 4: Log hexadecimal and ASCII dump of complete transmission after STARTTLS.
+- name: 'postfix settings smtpd | generate postfix smtpd tls logging map'
+  ansible.builtin.set_fact:
+    _mail_postfix_smtpd_tls_log: '{{ {"0": 1, "1": 1, "2": 1, "3": 1, "4": 2, "5": 2} }}'
+
+- name: 'postfix settings smtpd | log summary message on TLS handshake completion'
+  ansible.builtin.command: 'postconf smtpd_tls_loglevel={{ _mail_postfix_smtpd_tls_log[__log_int] }}'
+  changed_when: false
+
+- name: 'postfix settings smtpd | set TLS session cache file'
+  ansible.builtin.command: 'postconf smtpd_tls_session_cache_database=btree:${data_directory}/smtpd_scache'
+  changed_when: false
+
+# TODO(postfix 3.6+): this becomes a minimal accepted level (e.g. >=TLSv1.2)
+- name: 'postfix settings smtpd | require mandatory strong TLS protocols (disables SSLv2/3, TLSv1/1.1)'
+  ansible.builtin.command: 'postconf smtpd_tls_mandatory_protocols=!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+  changed_when: false
+
+# TODO(postfix 3.6+): this becomes a minimal accepted level (e.g. >=TLSv1.2)
+- name: 'postfix settings smtpd | accept only strong TLS protocols (disables SSLv2/3, TLSv1/1.1)'
+  ansible.builtin.command: 'postconf smtpd_tls_protocols=!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+  changed_when: false
+
+- name: 'postfix settings smtpd | generate list for recipient email restrictions'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_recipient_restrictions:
+      - 'permit_sasl_authenticated'          # allow authenticated clients per RFC 4954
+      - 'permit_mynetworks'                  # allow trusted networks
+      - 'reject_unauth_destination'          # reject unless postfix is the mail forwarder or final destination in RCPT TO
+      - 'check_policy_service unix:private/policyd-spf' # verify against SPF policy service
+      - 'reject_unauth_pipelining'           # reject out-of-order or unprompted SMTP commands
+      - 'reject_invalid_helo_hostname'       # reject malformed hostnames
+      - 'reject_non_fqdn_helo_hostname'      # reject non-FQDN hostnames or addresses
+      - 'reject_unknown_recipient_domain'    # reject non final destination and RCPT TO has no DNS A or MX, or malformed MX record
+      - 'reject_rbl_client zen.spamhaus.org' # reject when client is blacklisted
+      - 'check_policy_service inet:127.0.0.1:10023' # verify against postgrey service
+
+- name: 'postfix settings smtpd | set restrictions for recipient emails'
+  ansible.builtin.command: postconf "smtpd_recipient_restrictions={{ _mail_postfix_settings_smtpd_recipient_restrictions|join(',') }}"
+  changed_when: false
+
+- name: 'postfix settings smtpd | generate list for client connection restrictions'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_client_restrictions:
+      - 'permit_mynetworks'         # allow trusted networks
+      - 'permit_sasl_authenticated' # allow authenticated clients per RFC 4954
+      - 'reject_unauth_destination' # reject unless postfix is the mail forwarder or final destination in RCPT TO
+      - 'reject_unauth_pipelining'  # reject out-of-order or unprompted SMTP commands
+
+- name: 'postfix settings smtpd | set restrictions for client connection requests'
+  ansible.builtin.command: postconf "smtpd_client_restrictions={{ _mail_postfix_settings_smtpd_client_restrictions|join(',') }}"
+  changed_when: false
+
+- name: 'postfix settings smtpd | generate list for sender restrictions'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_sender_restrictions:
+      - 'reject_authenticated_sender_login_mismatch' # reject when $smtpd_sender_login_maps specifies a MAIL FROM owner but client is not (SASL) logged in as MAIL FROM
+                                                     #        or client (SASL) logged in but does not own MAIL FROM address according to $smtpd_sender_login_maps.
+      - 'permit_sasl_authenticated'                  # allow authenticated clients per RFC 4954
+      - 'permit_mynetworks'                          # allow trusted networks
+      - 'reject_unknown_sender_domain'               # reject non final destination and MAIL FROM has no DNS A or MX, or malformed MX record
+
+- name: 'postfix settings smtpd | set restrictions for sending email'
+  ansible.builtin.command: postconf "smtpd_sender_restrictions={{ _mail_postfix_settings_smtpd_sender_restrictions|join(',') }}"
+  changed_when: false
+
+- name: 'postfix settings smtpd | generate list for sasl auth login maps'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_sender_login_maps:
+      - '$virtual_mailbox_domains'                 # check virtual domains (texthash:/etc/postfix/virtual/mailbox_domains)
+      - 'hash:/etc/aliases'                        # check local aliases
+      - 'pcre:/etc/postfix/pcre/sender_login_maps' # use full user@domain for login auth
+
+- name: 'postfix settings smtpd | define sasl auth login map MAIL FROM to local and virtual domains/users'
+  ansible.builtin.command: postconf "smtpd_sender_login_maps=unionmap:{ {{ _mail_postfix_settings_smtpd_sender_login_maps|join(', ') }} }"
+  changed_when: false
+
+- name: 'postfix settings smtpd | evaluate restrictions after receiving RCPT TO command'
+  ansible.builtin.command: 'postconf smtpd_delay_reject=yes'
+  changed_when: false
+
+- name: 'postfix settings smtpd | require HELO from remote smtp'
+  ansible.builtin.command: 'postconf smtpd_helo_required=yes'
+  changed_when: false
+
+# Additional restrictions are handled in SMTPD recipient restrictions (after
+# HELO), including unknown helo hostname (see unknown recipient domain).
+- name: 'postfix settings smtpd | generate list for helo restrictions'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_helo_restrictions:
+      - 'permit_mynetworks'            # allow trusted networks
+      - 'reject_invalid_helo_hostname' # reject malformed hostnames
+      - 'permit'                       # allow everything else
+
+- name: 'postfix settings smtpd | set restrictions for HELO commands'
+  ansible.builtin.command: postconf "smtpd_helo_restrictions={{ _mail_postfix_settings_smtpd_helo_restrictions|join(',') }}"
+  changed_when: false
+
+- name: 'postfix settings smtpd | generate list for relay restrictions'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_smtpd_relay_restrictions:
+      - 'permit_mynetworks'         # allow trusted networks
+      - 'permit_sasl_authenticated' # allow authenticated clients per RFC 4954
+      - 'defer_unauth_destination'  # reject with non-permanent error unless postfix is the mail forwarder or final destination in RCPT TO
+
+- name: 'postfix settings smtpd | prevent open-relay; accept only trusted networks, authenticated clients & relays'
+  ansible.builtin.command: postconf "smtpd_relay_restrictions={{ _mail_postfix_settings_smtpd_relay_restrictions|join(',') }}"
+  changed_when: false
+
+# See: amavis.main.yml
+- name: 'postfix settings smtpd | wait until entire email message arrives before sending to amavis'
+  ansible.builtin.command: 'postconf smtpd_proxy_options=speed_adjust'
+  changed_when: false

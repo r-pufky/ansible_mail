@@ -1,0 +1,89 @@
+---
+###############################################################################
+# Postfix MTA Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Args:
+#   mail_vmail_user: string vmail user. Determines UID/GID for vmail
+#       restrictions.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * https://workaround.org/ispmail
+# * https://access.redhat.com/articles/1468593
+# * https://rudd-o.com/linux-and-free-software/setting-up-a-mail-server-using-postfix-in-5-minutes
+
+# Chrooted environments cannot follow symlinks, generating this warning:
+#
+#   symlink leaves directory: /etc/postfix/./makedefs.out
+#
+- name: 'postfix settings | replace makedefs.out symlink with file to remove warning in chroot environment'
+  ansible.builtin.copy:
+    src:        '/usr/share/postfix/makedefs.out'
+    dest:       '/etc/postfix/makedefs.out'
+    remote_src: true
+    owner:      'root'
+    group:      'root'
+    mode:       0644
+    force:      true
+
+- name: 'postfix settings | set settings base config'
+  ansible.builtin.copy:
+    dest:    '/etc/postfix/main.cf'
+    owner:   'root'
+    group:   'root'
+    mode:    0644
+    force:   true
+    content: ''
+  changed_when: false
+
+- ansible.builtin.include_tasks: core.main.yml
+- ansible.builtin.include_tasks: tls.main.yml
+- ansible.builtin.include_tasks: smtpd.main.yml
+- ansible.builtin.include_tasks: smtp.main.yml
+- ansible.builtin.include_tasks: sasl.main.yml
+- ansible.builtin.include_tasks: virtual.main.yml
+- ansible.builtin.include_tasks: postscreen.main.yml
+- ansible.builtin.include_tasks: milter.main.yml
+- ansible.builtin.include_tasks: pcre.main.yml
+- ansible.builtin.include_tasks: amavis.main.yml
+- ansible.builtin.include_tasks: postsrs.main.yml
+
+- name: 'postfix settings | validate postfix main.cf'
+  ansible.builtin.shell: 'set -o pipefail && postfix check 2>&1 | grep main'
+  args:
+    executable: '/bin/bash'
+  register: _mail_postfix_check_main
+  changed_when: false
+  failed_when: false # no match exit code 1
+
+- name: 'postfix settings | main.cf validation failed'
+  ansible.builtin.fail:
+    msg: |
+      Postfix main.cf configuration failure:
+
+      {{ _mail_postfix_check_main.stdout }}
+  when: _mail_postfix_check_main.stdout|length > 0
+
+- name: 'postfix settings | force restart postfix'
+  ansible.builtin.debug:
+    msg: manually queueing postfix restart
+  changed_when: true
+  notify: 'restart postfix'

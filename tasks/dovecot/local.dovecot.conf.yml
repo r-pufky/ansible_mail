@@ -1,0 +1,474 @@
+---
+###############################################################################
+# Dovecot Custom Configuration
+###############################################################################
+# Dovecot is an open source IMAP and POP3 email server for Linux/UNIX-like
+# systems, written with security primarily in mind. Dovecot is an excellent
+# choice for both small and large installations. It’s fast, simple to set up,
+# requires no special administration and it uses very little memory.
+#
+# Use /etc/dovecot/local.conf to override default configuration settings, per
+# debian standard.
+#
+# Thunderbird: "Add Security Exception Notification"
+#   The certificate belongs to a different site, which could mean that somone
+#   is trying to impersonate this site.
+#
+#   You are likely using the internal IP to connect to the server; this is not
+#   using the DNS name of the server, which causes DNS validation to fail
+#   (working as intended).
+#
+#   Fixes:
+#   * connect to the server using the DNS entry for the server.
+#   * 'Confirm Security Exception' -- NOT RECOMMENDED, but OK if serving on a
+#     local network.
+#
+# Args:
+#   mail_vmail_group: string vmail group (will be created if non-existant).
+#   mail_report_interval: string ansible.builtin.cron.special_time, or
+#       'disable'.
+#   __postmaster_defined: string 'true' if domain catchalls defined. Use |bool
+#       for evaluation.
+#   __report_recipient: string email recipient of report.
+#   __mail_mx_fqdn: string FQDN MX mail name (mail.example.com).
+#   __log_int: integer translation of user requested logging level (using map).
+#   __fullchain_pem: string location of fullchain.pem certificate.
+#   __privkey_pem: string location of privkey.pem certificate.
+#   __tls_high_cipherlist: string colon (:) separated list of ciphers to use
+#       for postfix TLS and dovecot TLS.
+#   __vmail_uid: integer vmail user ID.
+#   __vmail_gid: integer vmail group ID.
+#
+# Reference:
+# * https://www.dovecot.org/
+# * https://doc.dovecot.org/settings/
+# * https://workaround.org/ispmail
+# * https://www.linode.com/docs/guides/email-with-postfix-dovecot-and-mysql/
+# * https://www.binarytides.com/install-postfix-dovecot-debian/
+
+- name: 'dovecot | purge existing configuration data'
+  ansible.builtin.file:
+    path:  '{{ item }}'
+    state: 'absent'
+  loop:
+    - '/etc/dovecot/local.cf'
+    - '/etc/dovecot/userdb'
+    - '/etc/systemd/system/dovecot.service.d'
+  when: mail_purge_install
+  notify: 'reload systemd'
+
+# Mail process debugging to determine why certain mail messages are not found.
+- name: 'dovecot main | set mail debug based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^mail_debug ='
+    line:   'mail_debug = {% if __log_int|int < 3 %}no{% else %}yes{% endif %}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Log failed auth attempts and reason. auth_debug overrides this setting.
+- name: 'dovecot main | set auth verbose based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_verbose ='
+    line:   'auth_verbose = {% if __log_int|int < 3 %}no{% else %}yes{% endif %}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Log the attempted password. Truncate hash to 6 characters.
+- name: 'dovecot main | set auth verbose passwords based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_verbose_passwords ='
+    line:   'auth_verbose_passwords = {% if __log_int|int < 4 %}no{% else %}sha1:6{% endif %}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Auth debug logging, enables auth_verbose. Passwords logged as <hidden>.
+- name: 'dovecot main | set auth debug based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_debug ='
+    line:   'auth_debug = {% if __log_int|int < 4 %}no{% else %}yes{% endif %}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Log password failure, passwords/scheme logged. auth_debug auto-enabled.
+- name: 'dovecot main | set auth debug passwords based on requested logging level'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_debug_passwords ='
+    line:   'auth_debug_passwords = {% if __log_int|int < 5 %}no{% else %}yes{% endif %}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot main | use maildir format for storing email'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^mail_location ='
+    line:   'mail_location = maildir:~/Maildir'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot main | store mail in /var/vmail/{DOMAIN}/{USER}'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^mail_home ='
+    line:   'mail_home = /var/vmail/%d/%n/'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot main | set {{ mail_vmail_group }} group for temporary privileged operations'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^mail_privileged_group ='
+    line:   'mail_privileged_group = {{ mail_vmail_group }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: "dovecot main | load user-specific plugins (from userdb 'extras' field)"
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^mail_plugins ='
+    line:   'mail_plugins = $mail_plugins'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# By default LIST command returns all entries in maildir beginning with a dot.
+# Enabling this option makes Dovecot return only entries which are directories.
+# This is done by stat()ing each entry, so it causes more disk I/O.
+# (For systems setting struct dirent->d_type, this check is free and it's
+# done always regardless of this setting)
+#
+# Since dovecot-sieve is always enabled, setting `maildir_stat_dirs = yes`
+# avoids `/var/mail/domain.tld/user/.dovecot.sieve` (symlink) to be treated as
+# a directory (default behavior). According to
+# https://github.com/Mailu/Mailu/issues/143#issuecomment-274596931, there is no
+# noticeable impact when this is enabled.
+- name: 'dovecot main | enable mail stat dirs to avoid listing sieve filters as mail folders'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^maildir_stat_dirs ='
+    line:   'maildir_stat_dirs = yes'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot main | set postmaster address'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^postmaster_address ='
+    line:   'postmaster_address = postmaster@{{ __primary_domain }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot master | configure imap-login (disable non-ssl/tls imap)'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 10-master imap-login -----'
+    block: |
+      service imap-login {
+        inet_listener imap {
+          port = 0
+        }
+        inet_listener imaps {
+          port = 993
+          ssl = yes
+        }
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot master | configure pop3-login (disable pop3)'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 10-master pop3-login -----'
+    block: |
+      service pop3-login {
+        inet_listener pop3 {
+          port = 0
+        }
+        inet_listener pop3s {
+          port = 0
+          ssl = yes
+        }
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot master | configure lmtp'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 10-master lmtp -----'
+    block: |
+      service lmtp {
+       unix_listener /var/spool/postfix/private/dovecot-lmtp {
+         mode = 0600
+         user = '{{ mail_postfix_user }}'
+         group = '{{ mail_postfix_group }}'
+        }
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot master | configure auth'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 10-master auth -----'
+    block: |
+      service auth {
+        unix_listener /var/spool/postfix/private/auth {
+          mode = 0660
+          user = '{{ mail_postfix_user }}'
+          group = '{{ mail_postfix_group }}'
+        }
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot auth | disable plaintext authentication'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^disable_plaintext_auth ='
+    line:   'disable_plaintext_auth = yes'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot auth | force plain, login auth mechanisms'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_mechanisms ='
+    line:   'auth_mechanisms = plain login'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot auth | use only username for virtual domain user login'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^auth_username_format ='
+    line:   'auth_username_format = %u'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot ssl | require ssl connections'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl ='
+    line:   'ssl = required'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot ssl | specify ssl fullchain certificate'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl_cert ='
+    line:   'ssl_cert = <{{ __fullchain_pem }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot ssl | specify ssl private key certificate'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl_key ='
+    line:   'ssl_key = <{{ __privkey_pem }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Minimum SSL protocol version to use. Potentially recognized values are SSLv3,
+# TLSv1, TLSv1.1, and TLSv1.2, depending on the OpenSSL version used.
+- name: 'dovecot ssl | require TLSv1.2 minimum'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl_min_protocol ='
+    line:   'ssl_min_protocol = TLSv1.2'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot ssl | set custom high-security cipher requirements'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl_cipher_list ='
+    line:   'ssl_cipher_list = {{ __tls_high_cipherlist }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot ssl | use server cipher list instead of client preferences'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^ssl_prefer_server_ciphers ='
+    line:   'ssl_prefer_server_ciphers = yes'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Leave default "Sent Messages" for OSX clients (they will subscribe if needed)
+# Thunderbird will assign 'Archives' to the archive special case.
+- name: 'dovecot mailboxes | auto-create, auto-subscribe users to well-known mailboxes'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 15-mailboxes -----'
+    block: |
+      namespace inbox {
+        mailbox Drafts {
+          auto = subscribe
+          special_use = \Drafts
+        }
+        mailbox Junk {
+          auto = subscribe
+          special_use = \Junk
+        }
+        mailbox Trash {
+          auto = subscribe
+          special_use = \Trash
+        }
+        mailbox Sent {
+          auto = subscribe
+          special_use = \Sent
+        }
+        mailbox Archive {
+          auto = subscribe
+          special_use = \Archive
+        }
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot lda | autocreate mailboxes when saving to non-existent mailboxes'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^lda_mailbox_autocreate ='
+    line:   'lda_mailbox_autocreate = yes'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot lda | autosubscribe autocreated mailboxes'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^lda_mailbox_autosubscribe ='
+    line:   'lda_mailbox_autosubscribe = yes'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+# Hostname to use in various parts of sent mails (e.g. in Message-Id) and in
+# LMTP replies. Default is the system's real hostname@domain; use FQDN of
+# MX mail server instead (enables changing of backends).
+- name: 'dovecot lda | set hostname to use for lda in sent mails'
+  ansible.builtin.lineinfile:
+    path:   '/etc/dovecot/local.conf'
+    regexp: '^hostname = '
+    line:   'hostname = {{ __mail_mx_fqdn }}'
+    create: true
+    mode:   0644
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot lda | load mail, sieve plugins for lda'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} 15-lda protocol lda -----'
+    block: |
+      protocol lda {
+        mail_plugins = $mail_plugins sieve
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+# https://doc.dovecot.org/configuration_manual/authentication/password_schemes/
+- name: 'dovecot auth-passwdfile | use strongest known password hashing scheme (ARGON2ID) for passdb'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} auth-passwordfile passdb -----'
+    block: |
+      passdb {
+        driver = passwd-file
+        args = scheme=ARGON2ID username_format=%u /etc/dovecot/userdb
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+# When using a 'passwd-like' file for userdb, do not set scheme; arguments are
+# positional and will generate
+#
+#   auth: missing passwd file: scheme=ARGON2ID username_format=... /etc/dovecot/userdb
+#
+- name: 'dovecot auth-passwdfile | use virtual mailboxes with userdb'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} auth-passwordfile userdb -----'
+    block: |
+      userdb {
+        driver = passwd-file
+        default_fields = uid={{ __vmail_uid }} gid={{ __vmail_gid }} home=/var/vmail/%d/%n
+        args = username_format=%u /etc/dovecot/userdb
+      }
+    state:  'present'
+  notify: 'restart dovecot'
+
+- name: 'dovecot sieve | set global dovecot sieve mail filters'
+  ansible.builtin.blockinfile:
+    path:   '/etc/dovecot/local.conf'
+    mode:   0644
+    marker: '# ----- {mark} sieve global filters -----'
+    block: |
+      plugin {
+        sieve = file:~/sieve;active=~/.dovecot.sieve
+        sieve_dir = ~/sieve
+        sieve_before = /usr/lib/dovecot/sieve-global/before/40-spam-to-junk.sieve
+        sieve_extensions = +notify +imapflags +vnd.dovecot.pipe +vnd.dovecot.filter
+        sieve_plugins = sieve_extprograms
+        sieve_pipe_bin_dir = /usr/lib/dovecot/sieve-pipe
+        sieve_filter_bin_dir = /usr/lib/dovecot/sieve-filter
+        sieve_vacation_dont_check_recipient = yes
+      }
+    state:  'present'
+  notify: 'restart dovecot'

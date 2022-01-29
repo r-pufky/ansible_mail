@@ -1,0 +1,103 @@
+---
+###############################################################################
+# OpenDKIM Check Key Setup
+###############################################################################
+# OpenDKIM is an open source implementation of the DKIM (Domain Keys Identified
+# Mail) sender authentication system proposed by the E-mail Signing Technology
+# Group (ESTG) (RFC5617), now standardized by the IETF (RFC6376). It also
+# includes implementations of the Vouch By Reference (VBR, RFC5518) proposed
+# standard and the experimental Authorized Third Party Signatures protocol
+# (ATPS, RFC6541).
+#
+# Checks DKIM keys for proper DNS results and provides information on how to
+# setup/correct issues using opendkim-testkey.
+#
+# Args:
+#   domain_check_key: dict containing dkim domain to setup DKIM.
+#       {
+#         domain: 'example.com',
+#         selector: 'mail',
+#         private: '{OPTIONAL private dkim key},
+#         public: '{OPTIONAL public dkim key}'
+#       }
+#   __resolv_nameservers: string comma separated list of nameservers.
+#
+# Reference:
+# * http://www.opendkim.org/
+# * https://wiki.debian.org/opendkim
+# * https://wiki.archlinux.org/title/OpenDKIM
+# * https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-dkim-with-postfix-on-debian-wheezy
+
+- name: 'dkim | confirm dkim public key is set'
+  block:
+    - name: 'dkim | determine selector to use for {{ domain.domain }}'
+      ansible.builtin.set_fact:
+        _mail_dkim_selector: '{% if "selector" not in domain %}mail{% else %}{{ domain.selector }}{% endif %}'
+
+    - name: 'dkim | setup public key test'
+      ansible.builtin.set_fact:
+        _mail_dkim_retries: '{{ 0 if _mail_dkim_retries is undefined else _mail_dkim_retries|int + 1 }}'
+
+    - name: 'dkim | query local private key data for {{ domain.domain }}'
+      ansible.builtin.command: 'cat /etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.private'
+      changed_when: false
+      register: _mail_dkim_key_warning_private
+
+    - name: 'dkim | query local public key data for {{ domain.domain }} ({{ _mail_dkim_retries }}/5)'
+      ansible.builtin.command: 'cat /etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.txt'
+      changed_when: false
+      register: _mail_dkim_key_warning_public
+
+    - name: 'dkim | MANUAL ACTION REQUIRED'
+      ansible.builtin.debug:
+        msg: |
+          DNS must be updated with the DKIM public key for {{ domain.domain }}.
+
+          DNS Setup
+          ---------
+            Create a new TXT record:  {{ _mail_dkim_selector }}._domainkey.{{ domain.domain }}
+
+            with the public key data:
+
+              {{ _mail_dkim_key_warning_public.stdout }}
+
+            Test with quotes first; some providers may require them to be removed. After
+            updating, proceed with validation.
+
+          Errors
+          ------
+            If you've recieved this error
+
+              opendkim-testkey mail._domainkey... unexpected reply class/type (-1/-1)
+
+            Then DNS UDP queries are not being forwarded to authoritative servers. Check
+            to make sure your DNS server is defined and forwarding properly.
+
+            Current nameserver: {{ __resolv_nameservers }}
+
+          ACTIONS
+          -------
+            Save public/private keys to simple.yml so they are not regenerated.
+
+              - {domain: '{{ domain.domain }}', selector: '{{ _mail_dkim_selector }}', private: 'vault encrypted private key', public: 'vault encrypted public key'}
+
+            Keys are located: /etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.{txt,private}
+
+    - name: 'dkim | pause until manually confirmed'
+      ansible.builtin.pause:
+        echo: false
+      when: mail_confirmation_prompt
+
+    - name: 'dkim | validate dkim dns keys'
+      ansible.builtin.command: 'opendkim-testkey -d {{ domain.domain }} -s {{ _mail_dkim_selector }} -vvv'
+      changed_when: false
+  rescue:
+    - name: 'dkim | maximum number of retries exceeded, failing setup'
+      ansible.builtin.fail:
+        msg: |
+          DKIM public key could not be confirmed. Please check that your DNS
+          changes have propagated. These can take up to 24 hours.
+      when: _mail_dkim_retries|int == 5
+
+    # recursively include key warning check until confirmed.
+    - ansible.builtin.include_tasks: check_key.yml

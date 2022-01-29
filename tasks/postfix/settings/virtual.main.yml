@@ -1,0 +1,71 @@
+---
+###############################################################################
+# Postfix MTA Virtual Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manage virtual_ settings.
+#
+# Args:
+#   mail_domains: list of strings containing hosted mail domains. The first
+#      domain listed is the primary domain. A primary domain is the default
+#      domain mail is sent from when a sender is not fully specified.
+#   __vmail_uid: integer vmail user ID.
+#   __vmail_gid: integer vmail group ID.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * https://workaround.org/ispmail
+# * https://rudd-o.com/linux-and-free-software/setting-up-a-mail-server-using-postfix-in-5-minutes
+
+- name: 'postfix settings virtual | use dovecot to deliver incoming virtual email'
+  ansible.builtin.command: 'postconf virtual_transport=lmtp:unix:private/dovecot-lmtp'
+  changed_when: false
+
+- name: 'postfix settings virtual | use virtual domains for domain lookup'
+  ansible.builtin.command: 'postconf virtual_mailbox_domains=texthash:/etc/postfix/virtual/mailbox_domains'
+  changed_when: false
+
+- name: 'postfix settings virtual | use virtual mailboxes for mailbox lookup'
+  ansible.builtin.command: 'postconf virtual_mailbox_maps=texthash:/etc/postfix/virtual/mailbox_maps'
+  changed_when: false
+
+- name: 'postfix settings virtual | use virtual aliases for alias lookup'
+  ansible.builtin.command: 'postconf virtual_alias_maps=texthash:/etc/postfix/virtual/alias_maps'
+  changed_when: false
+
+- name: 'postfix settings virtual | set virtual mail data directory'
+  ansible.builtin.command: 'postconf virtual_mailbox_base=/var/vmail'
+  changed_when: false
+
+- name: 'postfix settings virtual | set minimum acceptable virtual UID to {{ __vmail_uid }}'
+  ansible.builtin.command: 'postconf virtual_minimum_uid={{ __vmail_uid }}'
+  changed_when: false
+
+- name: 'postfix settings virtual | set virtual UID map to {{ __vmail_uid }}'
+  ansible.builtin.command: 'postconf virtual_uid_maps=static:{{ __vmail_uid }}'
+  changed_when: false
+
+- name: 'postfix settings virtual | set virtual GID map to {{ __vmail_gid }}'
+  ansible.builtin.command: 'postconf virtual_gid_maps=static:{{ __vmail_gid }}'
+  changed_when: false
+
+- name: 'postfix settings smtp | diable virutal mailbox size limits'
+  ansible.builtin.command: 'postconf virtual_mailbox_limit=0'
+  changed_when: false

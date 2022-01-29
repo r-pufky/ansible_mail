@@ -1,0 +1,19 @@
+---
+###############################################################################
+# Pyzor
+###############################################################################
+# Pyzor is a collaborative, networked system to detect and block spam using
+# digests of messages. Using Pyzor client a short digest is generated that is
+# likely to uniquely identify the email message.
+#
+# Pyzor configuration is validated after all services are restarted in
+# validate_mail.yml.
+#
+# Reference:
+# * https://www.pyzor.org/en/latest/
+# * https://kura.gg/2011/09/22/spamassassin-razor-pyzor/
+# * https://www.binarytides.com/install-spamassassin-with-postfix-dovecot/
+
+- name: 'pyzor | nothing to do'
+  ansible.builtin.debug:
+    msg: 'No actions to take for pyzor configuration.'

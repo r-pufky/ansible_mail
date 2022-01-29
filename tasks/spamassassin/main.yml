@@ -1,0 +1,4 @@
+---
+- ansible.builtin.include_tasks: default.spamassassin.yml
+- ansible.builtin.include_tasks: local.spamassassin.cf.yml
+- ansible.builtin.include_tasks: compile.yml

@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Postgrey User
+###############################################################################
+
+- name: 'user | create postgrey group'
+  ansible.builtin.group:
+    name:  'postgrey'
+    gid:   606
+    state: 'present'
+
+- name: 'user | create postgrey user'
+  ansible.builtin.user:
+    name:            'postgrey'
+    group:           'postgrey'
+    uid:             606
+    shell:           '/usr/sbin/nologin'
+    home:            '/var/lib/postgrey'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

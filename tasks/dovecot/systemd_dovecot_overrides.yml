@@ -1,0 +1,36 @@
+---
+###############################################################################
+# Dovecot systemd
+###############################################################################
+# Dovecot is an open source IMAP and POP3 email server for Linux/UNIX-like
+# systems, written with security primarily in mind. Dovecot is an excellent
+# choice for both small and large installations. It’s fast, simple to set up,
+# requires no special administration and it uses very little memory.
+#
+# Automatically restart dovecot service on failure/crash.
+#
+# Reference:
+# * https://www.dovecot.org/
+# * https://doc.dovecot.org/settings/
+# * https://workaround.org/ispmail
+# * https://www.linode.com/docs/guides/email-with-postfix-dovecot-and-mysql/
+
+- name: 'dovecot systemd | create dovecot service customization directory'
+  ansible.builtin.file:
+    dest:  '/etc/systemd/system/dovecot.service.d'
+    owner: 'root'
+    group: 'root'
+    mode:  0755
+    state: 'directory'
+
+- name: 'dovecot systemd | automatically restart dovecot, polling interval 5 seconds'
+  ansible.builtin.copy:
+    dest:  '/etc/systemd/system/dovecot.service.d/restart.conf'
+    owner: 'root'
+    group: 'root'
+    mode:  0644
+    content: |
+      [Service]
+      Restart=always
+      RestartSec=5s
+  notify: 'reload systemd'

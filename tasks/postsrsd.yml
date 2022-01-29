@@ -1,0 +1,45 @@
+---
+###############################################################################
+# Sender Rewriting Scheme (postsrsd)
+###############################################################################
+# SRS (Sending Rewriting Scheme) is a standard for including forwarding / relay
+# information in a forwarded / relayed e-mail message.
+#
+# For example, suppose alice@hotmail.com sends an e-mail to john@example.com,
+# and our Postfix server on myserver.example.com forwards this e-mail to
+# john123@gmail.com. SRS allows our Postfix server on myserver.example.com to
+# attach a virtual sticky note on the e-mail message explaining this situation
+# to Gmail. Otherwise, Gmail might become suspicious of why
+# myserver.example.com is producing messages that purport to come from
+# hotmail.com, which spammers and phishers wont do.
+#
+# Ports:
+# * 10001/tcp for forward lookup (localhost-localhost)
+# * 10002/tcp for reverse lookup (localhost-localhost)
+#
+# Args:
+#   __primary_domain: string postsrsd user.
+#
+# Reference:
+# * https://github.com/roehling/postsrsd
+# * https://jichu4n.com/posts/setting-up-dkim-and-srs-in-postfix/
+
+- name: 'postsrsd srs_domain | set local domain name (confirm with postconf -h mydomain)'
+  ansible.builtin.lineinfile:
+    path:   '/etc/default/postsrsd'
+    regexp: '^#?\s*SRS_DOMAIN='
+    line:   'SRS_DOMAIN={{ __primary_domain }}'
+    state:  'present'
+  notify: 'restart postsrsd'
+
+# Same as current default
+# auto generated postsrsd secrets on installation are fine for majority cases
+# SRS_SECRET=/etc/postsrsd.secret
+
+- name: 'postsrsd run_as | set postsrsd user'
+  ansible.builtin.lineinfile:
+    path:   '/etc/default/postsrsd'
+    regexp: '^#?\s*RUN_AS='
+    line:   'RUN_AS={{ mail_postsrsd_user }}'
+    state:  'present'
+  notify: 'restart postsrsd'

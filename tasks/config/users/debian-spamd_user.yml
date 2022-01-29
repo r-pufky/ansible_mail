@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Debian Spamd User
+###############################################################################
+
+- name: 'user | create debian-spamd group'
+  ansible.builtin.group:
+    name:  'debian-spamd'
+    gid:   608
+    state: 'present'
+
+- name: 'user | create debian-spamd user'
+  ansible.builtin.user:
+    name:            'debian-spamd'
+    group:           'debian-spamd'
+    uid:             608
+    shell:           '/bin/sh'
+    home:            '/var/lib/spamassassin'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

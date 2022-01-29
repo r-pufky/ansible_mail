@@ -1,0 +1,10 @@
+# {MAP} {DOMAIN}/{USER}/ must end with trailing slash, else mbox format is assumed.
+# Map Virtual Users
+{% for user in mail_users -%}
+{{ user.user }} {{ user.user.split("@")[1] }}/{{ user.user.split("@")[0] }}/
+{% endfor %}
+
+# Map Virtual Mailboxes
+{% for mailbox in mail_box_mappings -%}
+{{ mailbox.map }} {{ mailbox.to.split("@")[1] }}/{{ mailbox.to.split("@")[0] }}/
+{% endfor %}

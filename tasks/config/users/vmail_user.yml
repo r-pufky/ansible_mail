@@ -1,0 +1,25 @@
+---
+###############################################################################
+# Default Virtual Mail (vmail) User Group
+###############################################################################
+
+- name: 'user | create vmail group'
+  ansible.builtin.group:
+    name:  'vmail'
+    gid:   600
+    state: 'present'
+
+- name: 'user | create vmail user'
+  ansible.builtin.user:
+    name:            'vmail'
+    group:           'vmail'
+    uid:             600
+    shell:           '/usr/sbin/nologin'
+    home:            '/home/vmail'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

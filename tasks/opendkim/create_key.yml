@@ -1,0 +1,102 @@
+---
+###############################################################################
+# OpenDKIM Create Key
+###############################################################################
+# OpenDKIM is an open source implementation of the DKIM (Domain Keys Identified
+# Mail) sender authentication system proposed by the E-mail Signing Technology
+# Group (ESTG) (RFC5617), now standardized by the IETF (RFC6376). It also
+# includes implementations of the Vouch By Reference (VBR, RFC5518) proposed
+# standard and the experimental Authorized Third Party Signatures protocol
+# (ATPS, RFC6541).
+#
+# Generates a public/private DKIM keyset for specified domain using
+# opendkim-genkey. The selector is set from configuration dict.
+#
+# Only one domain key needs to exist for each domain, it can be used for all
+# hosts on that domain. 'mail' and 'default' are well-known de-facto standards.
+#
+# Args:
+#   domain: dict containing dkim domain to setup DKIM.
+#       {
+#         domain: 'example.com',
+#         selector: '{OPTIONAL default: "mail"}',
+#         private: '{OPTIONAL private dkim key},
+#         public: '{OPTIONAL public dkim key}'
+#       }
+#   mail_opendkim_user: string opendkim user.
+#   mail_opendkim_group: string opendkim group.
+#
+# Reference:
+# * http://www.opendkim.org/
+# * https://wiki.debian.org/opendkim
+# * https://wiki.archlinux.org/title/OpenDKIM
+# * https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-dkim-with-postfix-on-debian-wheezy
+
+- name: 'dkim | determine defaults required for {{ domain.domain }}'
+  ansible.builtin.set_fact:
+    _mail_dkim_selector: '{% if "selector" not in domain %}mail{% else %}{{ domain.selector }}{% endif %}'
+    _mail_dkim_private:  '{% if "private" not in domain %}{% else %}{{ domain.private }}{% endif %}'
+    _mail_dkim_public:   '{% if "public" not in domain %}{% else %}{{ domain.public }}{% endif %}'
+  no_log: true # private key data
+
+- name: 'dkim | set key directory'
+  ansible.builtin.file:
+    path:  '/etc/opendkim/keys/{{ domain.domain }}'
+    owner: '{{ mail_opendkim_user }}'
+    group: '{{ mail_opendkim_group }}'
+    mode:  0700
+    state: 'directory'
+    recurse: true
+
+- name: 'dkim | check key existence {{ domain.domain }} / {{ _mail_dkim_selector }}'
+  ansible.builtin.stat:
+    path: '/etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.private'
+  register: _mail_dkim_key_check
+
+- name: 'dkim | create dkim keypair for {{ domain.domain }}'
+  ansible.builtin.command: 'opendkim-genkey -b 2048 -d {{ domain.domain }} -D /etc/opendkim/keys/{{ domain.domain }} -s {{ _mail_dkim_selector }} -v'
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+  when: _mail_dkim_private|length == 0 and not _mail_dkim_key_check.stat.exists
+
+- name: 'dkim | set saved dkim private key for {{ domain.domain }}'
+  ansible.builtin.copy:
+    dest:    '/etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.private'
+    owner:   '{{ mail_opendkim_user }}'
+    group:   '{{ mail_opendkim_group }}'
+    mode:    0400
+    content: '{{ _mail_dkim_private }}'
+  changed_when: false
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+  when: _mail_dkim_private|length > 0
+
+- name: 'dkim | set saved dkim public key for {{ domain.domain }}'
+  ansible.builtin.copy:
+    dest:    '/etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.txt'
+    owner:   '{{ mail_opendkim_user }}'
+    group:   '{{ mail_opendkim_group }}'
+    mode:    0400
+    content: '{{ _mail_dkim_public }}'
+  changed_when: false
+  notify:
+    - 'restart opendkim'
+    - 'restart postfix'
+  when: _mail_dkim_public|length > 0
+
+- name: 'dkim | set keypair permissions'
+  ansible.builtin.file:
+    path:  '/etc/opendkim/keys/{{ domain.domain }}/{{ _mail_dkim_selector }}.{{ item }}'
+    owner: '{{ mail_opendkim_user }}'
+    group: '{{ mail_opendkim_group }}'
+    mode:  0400
+  loop:
+    - 'private'
+    - 'txt'
+
+- ansible.builtin.include_tasks: check_key.yml
+  vars:
+    domain_check_key: '{{ domain }}'
+  when: __mail_validation_checks

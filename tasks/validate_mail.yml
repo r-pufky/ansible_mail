@@ -1,0 +1,59 @@
+---
+###############################################################################
+# Validate Mail Configuration
+###############################################################################
+# Basic validation of mail setup to ensure things are running smoothly.
+#
+# Mostly prevents static configuration errors. Validation never causes changes.
+#
+
+- name: 'validate | virtual mailbox domains'
+  ansible.builtin.command: 'postmap -q {{ item }} texthash:/etc/postfix/virtual/mailbox_domains'
+  register: result
+  changed_when: false
+  failed_when: result.rc > 0
+  loop: '{{ mail_domains }}'
+  when: mail_domains|length > 0
+
+- name: 'validate | virtual mailbox maps'
+  ansible.builtin.command: 'postmap -q {{ mail_box_mappings[0].map }} texthash:/etc/postfix/virtual/mailbox_maps'
+  register: result
+  changed_when: false
+  failed_when: result.rc > 0
+  when: mail_box_mappings|length > 0
+
+- name: 'validate | virtual alias maps'
+  ansible.builtin.command: 'postmap -q {{ mail_aliases[0].map }} texthash:/etc/postfix/virtual/alias_maps'
+  register: result
+  changed_when: false
+  failed_when: result.rc > 0
+  when: mail_aliases|length > 0
+
+- name: 'validate | razor processing'
+  ansible.builtin.shell: 'set -o pipefail && echo "test" | spamassassin -D razor2 2>&1'
+  args:
+    executable: '/bin/bash'
+  register: result
+  changed_when: false
+  failed_when: '"dbg: razor2: results: spam" not in result.stdout'
+
+- name: 'validate | pyzor processing'
+  ansible.builtin.shell: 'set -o pipefail && echo "test" | spamassassin -D pyzor 2>&1 | less'
+  args:
+    executable: '/bin/bash'
+  register: result
+  changed_when: false
+  failed_when: '"dbg: pyzor: got response" not in result.stdout'
+
+- name: 'validate | manual verification steps'
+  ansible.builtin.debug:
+    msg: |
+      Manual validation can be done through:
+
+      * mxtoolbox.com
+      * dmarcian.org
+
+- name: 'validate | pause until manually confirmed'
+  ansible.builtin.pause:
+    echo: false
+  when: mail_confirmation_prompt

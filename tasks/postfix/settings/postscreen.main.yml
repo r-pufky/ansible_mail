@@ -1,0 +1,104 @@
+---
+###############################################################################
+# Postfix MTA Postscreen Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manages postscreen_ settings.
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+
+- name: 'postfix settings postscreen | generate list for access list'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_postscreen_access_list:
+      - 'permit_mynetworks'
+      - 'cidr:/etc/postfix/postscreen/custom_whitelist'
+      - 'cidr:/etc/postfix/postscreen_spf_whitelist'
+
+- name: 'postfix settings postscreen | allow trusted networks, whitelists to bypass postcreen'
+  ansible.builtin.command: postconf "postscreen_access_list={{ _mail_postfix_settings_postscreen_access_list|join(',') }}"
+  changed_when: false
+
+- name: 'postfix settings postscreen | drop blacklisted emails identified by postscreen'
+  ansible.builtin.command: 'postconf postscreen_blacklist_action=drop'
+  changed_when: false
+
+# http://www.postfix.org/POSTSCREEN_README.html
+- name: 'postfix settings postscreen | reject when the remote smtp client speaks before its turn (enforce)'
+  ansible.builtin.command: 'postconf postscreen_greet_action=enforce'
+  changed_when: false
+
+- name: 'postfix settings postscreen | set persistent storage for postscreen decisions'
+  ansible.builtin.command: 'postconf postscreen_cache_map=btree:$data_directory/postscreen_cache'
+  changed_when: false
+
+- name: 'postfix settings postscreen | enable postscreen pipelining'
+  ansible.builtin.command: 'postconf postscreen_pipelining_enable=yes'
+  changed_when: false
+
+- name: 'postfix settings postscreen | reject smtp connections that do not honor pipelining extension (enforce)'
+  ansible.builtin.command: 'postconf postscreen_pipelining_action=enforce'
+  changed_when: false
+
+- name: 'postfix settings postscreen | enable non smtp command tests'
+  ansible.builtin.command: 'postconf postscreen_non_smtp_command_enable=yes'
+  changed_when: false
+
+- name: 'postfix settings postscreen | reject smtp connections sending non-smtp commands (enforce)'
+  ansible.builtin.command: 'postconf postscreen_non_smtp_command_action=enforce'
+  changed_when: false
+
+- name: 'postfix settings postscreen | enable bare newline testing for remote smtp'
+  ansible.builtin.command: 'postconf postscreen_bare_newline_enable=yes'
+  changed_when: false
+
+- name: 'postfix settings postscreen | reject smtp connections that do not use <CR><LF> (bare newline) standard (enforce)'
+  ansible.builtin.command: 'postconf postscreen_bare_newline_action=enforce'
+  changed_when: false
+
+- name: 'postfix settings postscreen | set lower bound for DNSBL (DNS blacklisting) blacklist remote smtp (3)'
+  ansible.builtin.command: 'postconf postscreen_dnsbl_threshold=3'
+  changed_when: false
+
+# TODO(postfix 3.6+): renamed to postscreen_dnsbl_allowlist_threshold
+- name: 'postfix settings postscreen | set lower bound for DNSBL (DNS blacklisting) whitelist remote smtp (-1)'
+  ansible.builtin.command: 'postconf postscreen_dnsbl_whitelist_threshold=-1'
+  changed_when: false
+
+- name: 'postfix settings postscreen | reject when the remote smtp client exceeds DNSL (DNS Blacklisting) thresholds (enforce)'
+  ansible.builtin.command: 'postconf postscreen_dnsbl_action=enforce'
+  changed_when: false
+
+- name: 'postfix settings postscreen | generate list for blacklisting sites'
+  ansible.builtin.set_fact:
+    _mail_postfix_settings_postscreen_dnsbl_sites:
+      - 'zen.spamhaus.org*3'
+      - 'bl.mailspike.net'
+      - 'b.barracudacentral.org*2'
+      - 'bl.spameatingmonkey.net'
+      - 'dnsbl.sorbs.net'
+      - 'psbl.surriel.com'
+      - 'list.dnswl.org=127.0.[0..255].0*-2'
+      - 'list.dnswl.org=127.0.[0..255].1*-3'
+      - 'list.dnswl.org=127.0.[0..255].[2..3]*-4'
+
+- name: 'postfix settings postscreen | set list of servers and weights to check against DNSBL (DNS Blacklisting)'
+  ansible.builtin.command: postconf "postscreen_dnsbl_sites={{ _mail_postfix_settings_postscreen_dnsbl_sites|join(',') }}"
+  changed_when: false

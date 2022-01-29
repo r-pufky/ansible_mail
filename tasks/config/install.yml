@@ -1,0 +1,48 @@
+---
+###############################################################################
+# Install Packages
+###############################################################################
+# Install packages, purging old packages if set.
+#
+# Any custom data/paths created by packages should handle purging information
+# themselves; updating guidance in defaults/main/main.yml as needed.
+#
+# Args:
+#   mail_source_packages: list of dicts [{'PACKAGE': 'URI'}] of source
+#       packages to install.
+#   mail_default_users: list mapping of keys for users defined in
+#       defaults/main/users.yml.
+#
+# Generates:
+#   __vmail_uid: integer vmail user ID.
+#   __vmail_gid: integer vmail group ID.
+
+- ansible.builtin.include_tasks: packages.yml
+
+- name: 'install | add git source packages'
+  ansible.builtin.include_tasks: git.yml
+  when: mail_source_packages|length > 0
+  loop: '{{ mail_source_packages }}'
+  loop_control:
+    loop_var: package
+
+- name: 'install | ensure user/groups exist for role'
+  ansible.builtin.include_tasks: manage_users.yml
+  loop: '{{ mail_service_users }}'
+  loop_control:
+    loop_var: service_name
+
+- name: 'install | query vmail UID'
+  ansible.builtin.command: 'id {{ mail_vmail_user }} -u'
+  changed_when: false
+  register: _mail_install_vmail_uid
+
+- name: 'install | query vmail GID'
+  ansible.builtin.command: 'id {{ mail_vmail_user }} -g'
+  changed_when: false
+  register: _mail_install_vmail_gid
+
+- name: 'install | generate vmail UID/GID variables'
+  ansible.builtin.set_fact:
+    __vmail_uid: '{{ _mail_install_vmail_uid.stdout|int }}'
+    __vmail_gid: '{{ _mail_install_vmail_gid.stdout|int }}'

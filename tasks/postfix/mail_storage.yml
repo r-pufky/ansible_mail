@@ -1,0 +1,62 @@
+---
+###############################################################################
+# Postfix MTA Filesystem Setup
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Handles all non-postfix configuration setup, such as external files and
+# permissions.
+#
+# Args:
+#   mail_data: string location of mail data store. Emtpy or '/var/vmail' to use
+#       /var/vmail directly.
+#   mail_vmail_user: string vmail user.
+#   mail_vmail_group: string vmail group.
+#
+# Reference:
+# * http://www.postfix.org/
+# * https://workaround.org/ispmail
+# * https://www.linode.com/docs/guides/email-with-postfix-dovecot-and-mysql/
+
+- name: 'postfix vmail | check current vmail state'
+  ansible.builtin.stat:
+    path: '/var/vmail'
+  register: _mail_postfix_vmail_stat
+
+- name: 'postfix vmail | removing symlink to vmail (using local vmail store)'
+  ansible.builtin.file:
+    path:  '/var/vmail'
+    state: 'absent'
+  when: |
+    _mail_postfix_vmail_stat.stat.islnk is defined and
+    (mail_data|length == 0 or mail_data == '/var/vmail')
+
+- name: 'postfix vmail | link mail data to vmail directory'
+  ansible.builtin.file:
+    src:   '{{ mail_data }}'
+    path:  '/var/vmail'
+    state: 'link'
+    force: true
+    owner: '{{ mail_vmail_user }}'
+    group: '{{ mail_vmail_group }}'
+    mode:  0750
+  when: mail_data|length > 0 and mail_data != '/var/vmail'
+
+- name: 'postfix vmail | ensure vmail directory exists'
+  ansible.builtin.file:
+    path:  '/var/vmail'
+    state: 'directory'
+    owner: '{{ mail_vmail_user }}'
+    group: '{{ mail_vmail_group }}'
+    mode:  0750
+  when: mail_data|length == 0 or mail_data == '/var/vmail'
+
+# Find with parameter chunking (+) is much faster on 1m+ files than chmod -R.
+#
+# Find requires escaping parens for grouping classifiers when using exec to be
+# evaluated correctly. Both shell,command capture and remove/break escaping
+# leading to a failed state. Execute the raw unprotected command.
+- name: 'postfix vmail | ensure all mail permissions are correct (may take a while)'
+  ansible.builtin.raw: 'find /var/vmail \( ! -user {{ mail_vmail_user }} -o ! -group {{ mail_vmail_group }} \) -exec chown -v {{ mail_vmail_user }}:{{ mail_vmail_group }} {} \;'
+  changed_when: false

@@ -1,0 +1,25 @@
+---
+###############################################################################
+# OpenDKIM User
+###############################################################################
+
+- name: 'user | create opendkim group'
+  ansible.builtin.group:
+    name:  'opendkim'
+    gid:   602
+    state: 'present'
+
+- name: 'user | create opendkim user'
+  ansible.builtin.user:
+    name:            'opendkim'
+    group:           'opendkim'
+    uid:             602
+    shell:           '/usr/sbin/nologin'
+    home:            '/var/run/opendkim'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

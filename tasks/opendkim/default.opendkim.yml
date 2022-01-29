@@ -1,0 +1,26 @@
+---
+###############################################################################
+# OpenDKIM /etc/default/opendkim Configuration
+###############################################################################
+# OpenDKIM is an open source implementation of the DKIM (Domain Keys Identified
+# Mail) sender authentication system proposed by the E-mail Signing Technology
+# Group (ESTG) (RFC5617), now standardized by the IETF (RFC6376). It also
+# includes implementations of the Vouch By Reference (VBR, RFC5518) proposed
+# standard and the experimental Authorized Third Party Signatures protocol
+# (ATPS, RFC6541).
+#
+# Args:
+#   mail_postfix_user: string postfix user.
+#   mail_postfix_group: string postfix group.
+#   mail_opendkim_user: string opendkim user.
+#   mail_opendkim_group: string opendkim group.
+#
+# Reference:
+# * http://www.opendkim.org/
+# * https://wiki.debian.org/opendkim
+# * https://wiki.archlinux.org/title/OpenDKIM
+# * https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-dkim-with-postfix-on-debian-wheezy
+
+- name: 'dkim | nothing to do for defaults'
+  ansible.builtin.debug:
+    msg: 'No actions to take for dkim default configuration.'

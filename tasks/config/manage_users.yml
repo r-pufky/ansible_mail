@@ -1,0 +1,56 @@
+---
+###############################################################################
+# Manage Users
+###############################################################################
+# Ensure users defined in default/main/users.yml exist on the system.
+#
+# Check defined users/groups and create them with default settings if needed.
+# Custom user-defined users that do not exist will cause a hard failure.
+#
+# Args:
+#   service_name: string service to check user/group accounts. This refers to
+#       the VARIBALE of the user/group account and not the value.
+
+- name: 'install | lookup user account info for {{ service_name }}'
+  ansible.builtin.set_fact:
+    _mail_user:  "{{ vars['mail_' + service_name + '_user'] }}"
+    _mail_group: "{{ vars['mail_' + service_name + '_group'] }}"
+
+- name: 'check {{ service_name }} users exist'
+  block:
+    - name: 'install | check if {{ _mail_user }} user exists'
+      ansible.builtin.command: 'id {{ _mail_user }}'
+      register: results
+      changed_when: results.rc > 0
+      failed_when: false
+
+    - name: 'install | creating {{ _mail_user }}'
+      ansible.builtin.include_tasks: 'roles/mail/tasks/config/users/{{ service_name }}_user.yml'
+      when: results.rc != 0
+
+  rescue:
+    - name: 'install | FAILED creating {{ _mail_user }}'
+      ansible.builtin.fail:
+        msg: |
+          The user {{ _mail_user }} for service {{ service_name }} failed to be
+          created.
+
+          Custom users MUST be created before running this role.
+
+- name: 'check mail groups exist'
+  block:
+    # Role user creation tasks create groups. Immediately fail on no group.
+    - name: 'install | check if {{ _mail_group }} group exists'
+      ansible.builtin.command: 'groups {{ _mail_group }}'
+      register: results
+      changed_when: false
+      failed_when: results.rc > 0
+
+  rescue:
+    - name: 'install | FAILED finding {{ _mail_group }} group.'
+      ansible.builtin.fail:
+        msg: |
+          The group {{ _mail_group }} for service {{ service_name }} failed to
+          be found.
+
+          Custom groups MUST be created before running this role.

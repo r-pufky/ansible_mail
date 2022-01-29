@@ -1,0 +1,39 @@
+---
+###############################################################################
+# Dovecot Virtual User Configuration
+###############################################################################
+# Dovecot is an open source IMAP and POP3 email server for Linux/UNIX-like
+# systems, written with security primarily in mind. Dovecot is an excellent
+# choice for both small and large installations. It’s fast, simple to set up,
+# requires no special administration and it uses very little memory.
+#
+# Currently only supports /etc/dovecot/userdb.
+#
+# Args:
+#   mail_users: list of dicts containing virtual users.
+#       {
+#         user: '{USER}@{DOMAIN}',
+#         pass: '{PASS OR HASH}',
+#         uid: '{OPTIONAL user ID},
+#         gid: '{OPTIONAL group ID},
+#         gecos: '{OPTIONAL gecos field}'
+#         home: '{OPTIONAL home directory}'
+#         shell: '{OPTIONAL user shell}'
+#         extra: '{OPTIONAL extra parameters: mail plugins, ip restrictions}'
+#       }
+#
+# Reference:
+# * https://www.dovecot.org/
+# * https://doc.dovecot.org/configuration_manual/authentication/passwd_file/
+# * https://doc.dovecot.org/configuration_manual/authentication/password_schemes/#authentication-password-schemes
+
+- name: 'dovecot userdb | recreate virtual user configuration'
+  ansible.builtin.command: 'truncate -s 0 /etc/dovecot/userdb'
+  changed_when: false
+
+- name: 'dovecot userdb | configure virtual user userdb'
+  ansible.builtin.include_tasks: userdb.yml
+  loop: '{{ mail_users }}'
+  loop_control:
+    loop_var: user
+  no_log: true # plaintext password is possible

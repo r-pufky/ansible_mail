@@ -1,0 +1,40 @@
+---
+###############################################################################
+# Clam Antivirus
+###############################################################################
+# ClamAV is an open source (GPLv2) anti-virus toolkit, designed especially for
+# e-mail scanning on mail gateways. It provides a number of utilities including
+# a flexible and scalable multi-threaded daemon, a command line scanner and
+# advanced tool for automatic database updates. The core of the package is an
+# anti-virus engine available in a form of shared library.
+#
+# Args:
+#   mail_clamav_user: string clamav user.
+#   mail_amavis_group: string amavis group.
+#   __log_int: integer translation of user requested logging level (using map).
+#
+# Reference:
+# * https://www.clamav.net/
+# * https://help.ubuntu.com/community/PostfixAmavisNew
+# * https://www.fatofthelan.com/technical/how-to-install-postfix-amavis-clamav-and-spamassassin-on-debian-linux/
+
+- name: 'clamav | add clamav to amavis group'
+  ansible.builtin.user:
+    name:   '{{ mail_clamav_user }}'
+    append: true
+    groups:
+      - '{{ mail_amavis_group }}'
+    state:  'present'
+  notify: 'restart clamav'
+
+- name: 'clamav | log based on requested logging level '
+  ansible.builtin.lineinfile:
+    path:   /etc/clamav/clamd.conf
+    regexp: '^#?\s*LogVerbose '
+    line:   'LogVerbose {% if __log_int|int < 4 %}false{% else %}true{% endif %}'
+    state:  'present'
+  notify: 'restart clamav'
+
+# Amavis runs freshclam updates automatically, no cron needed. Verify with:
+#
+# service clamav-freshclam status

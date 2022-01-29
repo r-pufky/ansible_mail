@@ -1,0 +1,19 @@
+---
+###############################################################################
+# Generate DKIM default settings
+###############################################################################
+# Dynamically generate 'mail_dkim_domains' for defined domains.
+#
+# Only generate the bare minimum required for DKIM subrole (domain, selector).
+#
+# Generates:
+#   mail_dkim_domains: list of dics
+#       {
+#         domain: 'example.com',
+#         selector: 'mail',
+#       }
+
+- name: 'config | generate DKIM defaults for specified mail domains'
+  ansible.builtin.set_fact:
+    mail_dkim_domains: '{{ mail_dkim_domains + [{"domain": item, "selector": "mail"}] }}'
+  loop: '{{ mail_domains }}'

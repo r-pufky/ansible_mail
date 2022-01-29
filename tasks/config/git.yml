@@ -1,0 +1,26 @@
+---
+###############################################################################
+# Git source package install
+###############################################################################
+# Download git source packages.
+#
+# Args:
+#   package: {'PACKAGE NAME': 'URI'} of source package to install.
+
+- name: 'install | purge existing git source data'
+  ansible.builtin.file:
+    path:  '/var/lib/{{ package.name }}/'
+    state: 'absent'
+  when: mail_purge_install
+
+- name: 'install | git source package {{ package.name }}' # noqa git-latest always grab latest version
+  ansible.builtin.git:
+    repo:   '{{ package.uri }}'
+    dest:   '/var/lib/{{ package.name }}'
+    update: true
+  register: _mail_install_git_changed
+
+# Some packages use -, which violate enforced ansible variable constraints
+- name: 'install | saving git state {{ package.name }}' # noqa var-naming lint does not resolve final var name
+  ansible.builtin.set_fact:
+    '_mail_install_git_{{ package.name|replace("-","_") }}': '{{ _mail_install_git_changed }}'

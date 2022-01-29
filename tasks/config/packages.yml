@@ -1,0 +1,41 @@
+---
+###############################################################################
+# Package Management
+###############################################################################
+# Install packages, purging old packages if set.
+#
+# Any custom data/paths created by packages should handle purging information
+# themselves; updating guidance in defaults/main/main.yml as needed.
+#
+# Args:
+#   mail_purge_install: boolean true to clear package configuration (not data).
+#   mail_packages: dict {'COLLECTION': ['PACKAGES']} of packages to install.
+#   mail_packages_opendmarc_db_support: boolean true to install opendmarc
+#       dbconfig.
+
+- name: 'install | purging existing mail setup'
+  ansible.builtin.apt:
+    name:  '{{ mail_packages|dict2items|map(attribute="value")|flatten }}'
+    purge: true
+    state: 'absent'
+    autoremove: true
+  when: mail_purge_install
+
+- name: 'install | preconfigure opendmarc dbconfig'
+  ansible.builtin.debconf:
+    name:     'dbconfig-common'
+    question: 'dbconfig-common/dbconfig-install'
+    value:    '{{ mail_packages_opendmarc_db_support|string }}'
+    vtype:    'boolean'
+
+- name: 'install | add packages (may take a while)'
+  ansible.builtin.debug:
+    msg: |
+      Packages are being installed. This will take a few minutes.
+
+- name: 'install | add packages'
+  ansible.builtin.apt:
+    name:  '{{ mail_packages|dict2items|map(attribute="value")|flatten }}'
+    state: 'latest'
+    update_cache: true
+    install_recommends: true

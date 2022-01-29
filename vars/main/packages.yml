@@ -1,0 +1,99 @@
+---
+###############################################################################
+# Package configuration
+###############################################################################
+# Base package installs for services.
+
+mail_packages:
+  postfix:
+    - 'postfix'
+    - 'postfix-pcre'
+    - 'postfix-policyd-spf-python'
+
+  dovecot:
+    - 'dovecot-core'
+    - 'dovecot-imapd'
+    - 'dovecot-lmtpd'
+    - 'dovecot-managesieved'
+    - 'dovecot-sieve'
+    - 'sasl2-bin'
+    - 'libsasl2-modules'
+    - 'libsasl2-2'
+
+  amavis:
+    - 'altermime'
+    - 'amavisd-new'
+    - 'libnet-dns-perl'
+    - 'libmail-spf-perl'
+
+  clamav:
+    - 'clamav'
+    - 'clamav-daemon'
+
+  spamassassin:
+    - 'spamassassin'
+    - 're2c'
+    - 'sa-compile'
+
+  pyzor:
+    - 'pyzor'
+
+  razor:
+    - 'razor'
+
+  opendkim:
+    - 'opendkim'
+    - 'opendkim-tools'
+
+  opendmarc:
+    - 'opendmarc'
+
+  postgrey:
+    - 'postgrey'
+
+  postsrsd:
+    - 'postsrsd'
+
+  binary_formats:
+    - 'arj'
+    - 'binutils'
+    - 'bzip2'
+    - 'cabextract'
+    - 'cpio'
+    - 'file'
+    - 'lhasa'
+    - 'liblz4-tool'
+    - 'lrzip'
+    - 'lzip'
+    - 'lzop'
+    - 'nomarch'
+    - 'pax'
+    - 'p7zip-full'
+    - 'rar'
+    - 'rpm2cpio'
+    - 'unrar'
+    - 'unrar-free'
+    - 'unzip'
+    - 'zip'
+    # Do not install/remove, gzip pre-installed system package.
+    #- 'gzip'
+
+  pflogsumm:
+    - 'pflogsumm'
+
+  utilities:
+    - 'mutt'           # testing mail client
+    - 'whois'          # mkpasswd
+    - 'dnsutils'       # dig,host; dns,mx,spf,dmarc,dkim validation
+    - 'net-tools'      # netstat
+    - 'git'            # git sourced packages
+    - 'curl'           # public ip lookup
+    - 'ssl-cert-check' # validate ssl certificates
+
+# Source installs for packages.
+mail_source_packages:
+  - {name: 'spf-tools', uri: 'https://github.com/spf-tools/spf-tools.git'}
+  - {name: 'postwhite', uri: 'https://github.com/stevejenkins/postwhite.git'}
+
+# Install DB support for opendmarc?
+mail_packages_opendmarc_db_support: false

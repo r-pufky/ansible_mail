@@ -1,0 +1,122 @@
+---
+###############################################################################
+# OpenDMARC
+###############################################################################
+# OpenDMARC is an open source implementation of the Domain-based Message
+# Authentication, Reporting and Conformance (DMARC) specification.
+#
+# DMARC is a policy for mail transfer, which is already supported by some
+# common mail providers. It depends on Sender Policy Framework and DKIM. DMARC
+# provides a policy for outgoing mail and checks incoming mails for compliance
+# with that policy. The policy is published via a DNS TXT record. It is
+# explained in #DMARC Record. Validation is done in a daemon. For more info see
+# RFC7489.
+#
+# DMARC Set Options:
+# * Policy Level: Quarantine – Fail SPF/DKIM policy, then message is sent to
+#       SPAM/Junk folder. None – Reports possible suspicious mail messages, but
+#       all mail is sent to inbox; useful for testing.
+# * Aggregate Reporting: send to postmaster@ (default).
+# * Forensic Reporting: send to postmaster@ (default).
+# * Subdomain Policy: reject - no subdomain use. (sp=).
+# * Error Reporting: 1 - Generate report to the sending MTA if ANY underlying
+#       checks failed (fo=).
+# * Alignment mode for DKIM: r - Relaxed allows for any subdomain defined in
+#       the DKIM header.
+# * Alignment mode for SPF: r - Relaxed allows for any subdomain.
+# * % messages DMARC applies to: 100% of messages subjected to filtering by the
+#       DMARC policy.
+# * Report Format: afrf
+# * Reporting Interval: 86400
+#
+# _dmarc.example.com. IN TXT "v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com; ruf=mailto:postmaster@example.com; sp=reject; fo=1; ri=86400"
+#
+# Args:
+#   domain: string naked domain (example.com) to check.
+#
+# Reference:
+# * https://wiki.archlinux.org/title/OpenDMARC
+# * https://en.wikipedia.org/wiki/DMARC
+# * http://www.trusteddomain.org/opendmarc/
+# * https://dmarcguide.globalcyberalliance.org/
+
+- name: 'dmarc | query authoritative name server for {{ domain }}'
+  ansible.builtin.command: 'dig {{ domain }}. NS +short'
+  register: _mail_dmarc_ns_query
+  changed_when: false
+  failed_when: _mail_dmarc_ns_query.stdout|length == 0
+
+- name: 'dmarc | set validation tests'
+  ansible.builtin.set_fact:
+    _mail_dmarc_ns:     '{{ _mail_dmarc_ns_query.stdout_lines[0] }}'
+    _mail_dmarc_record: 'v=DMARC1; p=quarantine; rua=mailto:postmaster@{{ domain }}; ruf=mailto:postmaster@{{ domain }}; sp=reject; fo=1; ri=86400'
+
+- name: 'dmarc | check DMARC DNS settings'
+  block:
+    - name: 'dmarc | setup dns test'
+      ansible.builtin.set_fact:
+        _mail_dmarc_retries: '{{ 0 if _mail_dmarc_retries is undefined else _mail_dmarc_retries|int + 1 }}'
+
+    - name: 'dmarc | query TXT DMARC record for ({{ domain }})'
+      ansible.builtin.command: 'dig @{{ _mail_dmarc_ns }} _dmarc.{{ domain }}. txt +short'
+      register: _mail_dmarc_dns_txt_query
+      changed_when: false
+
+    - name: 'dmarc | sanitize results'
+      ansible.builtin.set_fact:
+        _mail_dmarc_dns_txt: '{{ _mail_dmarc_dns_txt_query.stdout }}'
+
+    - name: 'dmarc | MANUAL ACTION REQUIRED'
+      ansible.builtin.debug:
+        msg: |
+          Query Results
+          -------------
+            TXT DMARC record: {{ _mail_dmarc_dns_txt }}
+
+          DNS Records
+          -----------
+            Set the following DNS records on your provider:
+
+            TXT Record:   _dmarc.{{ domain }}.        TXT     300     "{{ _mail_dmarc_record }}"
+
+            Test with quotes first; some providers may require them to be removed. After
+            updating, proceed with validation.
+
+          Notes
+          -----
+            Using 'p=none' during initial setup as this will allow for time to monitor the
+            reports generated and determine if legitimate mail will be blocked before
+            switching the DMARC policy to 'p=quarantine'. 'p=none' lowers domain reputation.
+
+          ACTIONS
+          -------
+            Confirm records have been created and continue to validate.
+
+    - name: 'dmarc | pause until manually confirmed'
+      ansible.builtin.pause:
+        echo: false
+      when: mail_confirmation_prompt
+
+    - name: 'dmarc | verify dns records'
+      ansible.builtin.meta: noop
+      # txt dmarc record must exist
+      # aggregate reporting enabled
+      # forensic reporting enabled
+      # reject subdomain usage
+      # generate error reporting to sending MTA
+      failed_when: |
+        _mail_dmarc_dns_txt|length == 0 or
+        'rua=mailto:postmaster@' not in _mail_dmarc_dns_txt or
+        'ruf=mailto:postmaster@' not in _mail_dmarc_dns_txt or
+        'sp=reject;' not in _mail_dmarc_dns_txt or
+        'fo=1;' not in _mail_dmarc_dns_txt
+  rescue:
+    - name: 'dmarc | maximum number of retries exceeded, failing setup'
+      ansible.builtin.fail:
+        msg: |
+          TXT DMARC DNS records could not be confirmed. Please check that your DNS changes
+          have propagated. These can take up to 24 hours.
+      when: _mail_dmarc_retries|int == 5
+
+    # recursively include until confirmed.
+    - ansible.builtin.include_tasks: check_spf.yml

@@ -1,0 +1,28 @@
+---
+###############################################################################
+# Mail Tasks
+###############################################################################
+# Developer Notes:
+# Use service names for single files, or directory if more complex setup. Use
+# unique file names (excluding main): duplicate file names in a role will lead
+# to nondeterministic behavior.
+
+- ansible.builtin.import_tasks: config/main.yml
+- ansible.builtin.import_tasks: policyd_spf/main.yml
+- ansible.builtin.import_tasks: opendkim/main.yml
+- ansible.builtin.import_tasks: opendmarc/main.yml
+- ansible.builtin.import_tasks: postwhite.yml
+- ansible.builtin.import_tasks: postscreen.yml
+- ansible.builtin.import_tasks: postgrey.yml
+- ansible.builtin.import_tasks: postsrsd.yml
+- ansible.builtin.import_tasks: spamassassin/main.yml
+- ansible.builtin.import_tasks: razor.yml
+- ansible.builtin.import_tasks: pyzor.yml
+- ansible.builtin.import_tasks: amavis.yml
+- ansible.builtin.import_tasks: clamav.yml
+- ansible.builtin.import_tasks: dovecot/main.yml
+- ansible.builtin.import_tasks: postfix/main.yml
+- ansible.builtin.import_tasks: pflogsumm.yml
+- ansible.builtin.import_tasks: flush_services.yml
+- ansible.builtin.import_tasks: validate_mail.yml
+  when: __mail_validation_checks

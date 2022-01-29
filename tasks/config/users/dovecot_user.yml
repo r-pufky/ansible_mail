@@ -1,0 +1,27 @@
+---
+###############################################################################
+# Dovecot User
+###############################################################################
+
+- name: 'user | create dovecot group'
+  ansible.builtin.group:
+    name:  'dovecot'
+    gid:   604
+    state: 'present'
+
+- name: 'user | create dovecot user'
+  ansible.builtin.user:
+    name:            'dovecot'
+    group:           'dovecot'
+    groups:          'mail'
+    uid:             604
+    shell:           '/usr/sbin/nologin'
+    home:            '/usr/lib/dovecot'
+    comment:         'Dovecot mail server,,,'
+    create_home:     false
+    password:        '!'
+    password_lock:   true
+    update_password: 'always'
+    expires:         -1
+    system:          true
+    state:           'present'

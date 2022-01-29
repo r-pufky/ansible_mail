@@ -1,0 +1,3 @@
+---
+- ansible.builtin.include_tasks: validate_spf.yml
+  when: __mail_validation_checks

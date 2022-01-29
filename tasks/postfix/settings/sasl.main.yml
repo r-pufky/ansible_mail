@@ -1,0 +1,56 @@
+---
+###############################################################################
+# Postfix MTA SASL Settings
+###############################################################################
+# Postfix attempts to be fast, easy to administer, and secure. The outside has
+# a definite Sendmail-ish flavor, but the inside is completely different.
+#
+# Configure postfix settings. When the same parameter is defined multiple
+# times, only the last instance is remembered. Otherwise, the order of main.cf
+# parameter definitions does not matter.
+#
+# postconf commands never report changed. postconf does not return any
+# information on whether a line was or was not changed via exit codes or
+# verbose mode. Force execute a postfix reload after configuration is set.
+# Queries for UID/GID do not change system.
+#
+# To ensure service additions/deletions; master.cf is cleared before modifying,
+# so default services are included in this configuration even if unchanged.
+#
+# postfix must be reloaded to pickup changes in main.cf.
+#
+# Manages _sasl_ settings.
+#
+# Args:
+#   __primary_domain: string naked primary domain (example.com).
+#
+# Reference:
+# * http://www.postfix.org/
+# * http://www.postfix.org/postconf.5.html
+# * https://datatracker.ietf.org/doc/html/rfc4954
+# * https://doc.dovecot.org/configuration_manual/howto/postfix_and_dovecot_sasl/
+# * https://upwork.link/postfixamavis/sasl-authentication-and-postfix/
+
+- name: 'postfix settings sasl | enable SASL authentication support'
+  ansible.builtin.command: 'postconf smtpd_sasl_auth_enable=yes'
+  changed_when: false
+
+- name: 'postfix settings sasl | use dovecot for SASL authentication'
+  ansible.builtin.command: 'postconf smtpd_sasl_type=dovecot'
+  changed_when: false
+
+- name: 'postfix settings sasl | use dovecot private/auth for configuration/rendezvous point'
+  ansible.builtin.command: 'postconf smtpd_sasl_path=private/auth'
+  changed_when: false
+
+- name: 'postfix settings sasl | do not allow anonymous logins over SASL'
+  ansible.builtin.command: 'postconf smtpd_sasl_security_options=noanonymous'
+  changed_when: false
+
+- name: 'postfix settings sasl | use primary domain ({{ __primary_domain }}) for local authentication realm'
+  ansible.builtin.command: 'postconf smtpd_sasl_local_domain=$mydomain'
+  changed_when: false
+
+- name: 'postfix settings sasl | enable obsolete AUTH commands (RFC 4954), repeating AUTH with AUTH= for broken clients (MS Outlook Express, Exchange)'
+  ansible.builtin.command: 'postconf broken_sasl_auth_clients=yes'
+  changed_when: false
